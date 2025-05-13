@@ -6,101 +6,98 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
 
+# Load environment variables
 load_dotenv()
 
+# Configure logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
-
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-
-# Command to start the bot
+# Telegram Bot Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Hello! I'm your group management bot.")
 
-
-# Delete messages that contain links or @usernames
 async def delete_unwanted_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
-    chat_id = message.chat.id
-
     if 'http' in message.text or '@' in message.text:
         try:
             await message.delete()
             await context.bot.send_message(
-                chat_id=chat_id,
+                chat_id=message.chat.id,
                 text="Links and @usernames are not allowed!"
             )
         except Exception as e:
-            logger.error(f"Error deleting message or sending warning: {e}")
+            logger.error(f"Error deleting message: {e}")
 
-
-# Function to automatically delete messages after 5 minutes
-async def auto_delete_messages(context: ContextTypes.DEFAULT_TYPE) -> None:
-    chat_id = context.job.chat_id
-    message_id = context.job.data
-
-    try:
-        await context.bot.delete_message(chat_id, message_id)
-    except Exception as e:
-        logger.error(f"Error auto-deleting message: {e}")
-
-
-# Handle new messages from users
 async def handle_new_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.message
-    chat_id = message.chat.id
-    user_id = message.from_user.id
-
-    admins = [admin.user.id for admin in await context.bot.get_chat_administrators(chat_id)]
-
-    if user_id not in admins:
+    if update.message.from_user.id not in [admin.user.id for admin in 
+                                         await context.bot.get_chat_administrators(update.message.chat.id)]:
         context.job_queue.run_once(
-            auto_delete_messages,
-            when=300,
-            data=message.message_id,
-            chat_id=chat_id
+            lambda ctx: ctx.bot.delete_message(ctx.job.chat_id, ctx.job.data),
+            300,
+            data=update.message.message_id,
+            chat_id=update.message.chat.id
         )
 
-
-# Health check endpoint
+# Health Check Server
 async def health_check(request):
     return web.Response(text="OK")
 
-
-# Function to run the health check server
-async def start_health_check_server():
+async def start_health_server():
     app = web.Application()
     app.router.add_get("/", health_check)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8000)
-    await site.start()
-    logger.info("Health check server started on port 8000")
+    await web.TCPSite(runner, "0.0.0.0", 8000).start()
+    logger.info("Health check server running on port 8000")
+    return runner
 
-
-async def main():
-    # Start the health check server as a background task
-    asyncio.create_task(start_health_check_server())
-
-    # Create the bot application
+async def run_bot():
     application = ApplicationBuilder().token(BOT_TOKEN).build()
-
+    
     # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, delete_unwanted_messages))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_message))
+    
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+    logger.info("Bot is running and polling...")
+    return application
 
-    # Run the bot
-    await application.run_polling()
-
+async def main():
+    health_server = None
+    bot = None
+    
+    try:
+        # Start both services
+        health_server = await start_health_server()
+        bot = await run_bot()
+        
+        # Keep running forever
+        while True:
+            await asyncio.sleep(3600)
+            
+    except asyncio.CancelledError:
+        logger.info("Shutting down...")
+    finally:
+        # Cleanup
+        if bot:
+            await bot.updater.stop()
+            await bot.stop()
+            await bot.shutdown()
+        if health_server:
+            await health_server.cleanup()
+        logger.info("Services stopped")
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Bot and health check server stopped.")
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
