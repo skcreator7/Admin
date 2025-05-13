@@ -4,7 +4,7 @@ import asyncio
 from aiohttp import web
 from telegram import Update
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     CommandHandler,
     MessageHandler,
     filters,
@@ -12,7 +12,6 @@ from telegram.ext import (
 )
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
 # Configure logging
@@ -24,11 +23,12 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-class TelegramBot:
+class BotManager:
     def __init__(self):
         self.application = None
         self.runner = None
         self.site = None
+        self.stop_event = asyncio.Event()
 
     async def delete_message(self, context: ContextTypes.DEFAULT_TYPE):
         """Delete a specific message"""
@@ -74,17 +74,20 @@ class TelegramBot:
 
     async def handle_new_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Auto-delete regular user messages after 5 minutes"""
-        if update.message.from_user.id not in [
-            admin.user.id for admin in 
-            await context.bot.get_chat_administrators(update.message.chat.id)
-        ]:
-            context.job_queue.run_once(
-                self.delete_message,
-                300,  # 5 minutes
-                chat_id=update.message.chat_id,
-                data=update.message.message_id,
-                name=f"del_msg_{update.message.message_id}"
-            )
+        try:
+            if update.message.from_user.id not in [
+                admin.user.id for admin in 
+                await context.bot.get_chat_administrators(update.message.chat.id)
+            ]:
+                context.job_queue.run_once(
+                    self.delete_message,
+                    300,  # 5 minutes
+                    chat_id=update.message.chat_id,
+                    data=update.message.message_id,
+                    name=f"del_msg_{update.message.message_id}"
+                )
+        except Exception as e:
+            logger.error(f"Message handling error: {e}")
 
     async def health_check(self, request):
         """Health check endpoint"""
@@ -100,72 +103,106 @@ class TelegramBot:
         await self.site.start()
         logger.info("Health check server running on port 8000")
 
-    async def stop_web_server(self):
-        """Stop the web server"""
+    async def initialize_bot(self):
+        """Initialize the Telegram bot application"""
+        self.application = (
+            Application.builder()
+            .token(BOT_TOKEN)
+            .concurrent_updates(True)
+            .build()
+        )
+
+        # Add handlers
+        self.application.add_handler(CommandHandler("start", self.start))
+        self.application.add_handler(
+            MessageHandler(filters.TEXT & ~filters.COMMAND, self.delete_unwanted_messages)
+        )
+        self.application.add_handler(
+            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_new_message)
+        )
+
+        await self.application.initialize()
+        await self.application.start()
+        logger.info("Bot initialized")
+
+    async def run_polling(self):
+        """Run the bot in polling mode with proper error handling"""
+        try:
+            while not self.stop_event.is_set():
+                try:
+                    await self.application.updater.start_polling()
+                    await self.stop_event.wait()
+                except Exception as e:
+                    logger.error(f"Polling error: {e}")
+                    await asyncio.sleep(5)  # Wait before retrying
+        finally:
+            await self.cleanup()
+
+    async def cleanup(self):
+        """Cleanup resources"""
+        logger.info("Cleaning up resources...")
+        
+        # Stop the updater if it's running
+        if self.application and hasattr(self.application, 'updater'):
+            try:
+                await self.application.updater.stop()
+            except Exception as e:
+                logger.error(f"Error stopping updater: {e}")
+
+        # Stop the application
+        if self.application:
+            try:
+                await self.application.stop()
+                await self.application.shutdown()
+            except Exception as e:
+                logger.error(f"Error stopping application: {e}")
+
+        # Stop the web server
         if self.site:
             await self.site.stop()
         if self.runner:
             await self.runner.cleanup()
-        logger.info("Web server stopped")
+        
+        logger.info("Cleanup complete")
 
     async def run(self):
         """Main entry point for the bot"""
         try:
-            # Initialize the bot application
-            self.application = (
-                ApplicationBuilder()
-                .token(BOT_TOKEN)
-                .concurrent_updates(True)
-                .build()
-            )
-
-            # Add handlers
-            self.application.add_handler(CommandHandler("start", self.start))
-            self.application.add_handler(
-                MessageHandler(filters.TEXT & ~filters.COMMAND, self.delete_unwanted_messages)
-            )
-            self.application.add_handler(
-                MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_new_message)
-            )
-
-            # Start web server
             await self.start_web_server()
-
-            # Run the bot until stopped
-            await self.application.run_polling()
-
-        except asyncio.CancelledError:
-            logger.info("Received shutdown signal")
+            await self.initialize_bot()
+            
+            # Start the polling in a separate task
+            polling_task = asyncio.create_task(self.run_polling())
+            
+            # Keep the main task running
+            while not self.stop_event.is_set():
+                await asyncio.sleep(1)
+                
+        except KeyboardInterrupt:
+            logger.info("Received keyboard interrupt")
+            self.stop_event.set()
         except Exception as e:
             logger.error(f"Bot crashed: {e}", exc_info=True)
+            self.stop_event.set()
         finally:
-            await self.stop()
-
-    async def stop(self):
-        """Cleanup resources"""
-        logger.info("Shutting down...")
-        try:
-            if self.application:
-                if self.application.updater:
-                    await self.application.updater.stop()
-                await self.application.stop()
-                await self.application.shutdown()
-        except Exception as e:
-            logger.error(f"Error during shutdown: {e}")
-        
-        await self.stop_web_server()
-        logger.info("Shutdown complete")
+            await self.cleanup()
 
 async def main():
-    bot = TelegramBot()
+    bot = BotManager()
     try:
         await bot.run()
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}", exc_info=True)
 
 if __name__ == "__main__":
-    # Use asyncio.run() for proper event loop management
+    # Use asyncio.run() only if there isn't already a running event loop
     try:
-        asyncio.run(main())
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(main())
+        else:
+            asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Application stopped")
+        logger.info("Application stopped by user")
+    except Exception as e:
+        logger.error(f"Application error: {e}", exc_info=True)
