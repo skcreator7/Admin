@@ -29,7 +29,7 @@ async def delete_unwanted_messages(update: Update, context: ContextTypes.DEFAULT
             await message.delete()
             await context.bot.send_message(
                 chat_id=message.chat.id,
-                text="Links and @usernames are not allowed!"
+                text="@Sk4Film मेरे सामने होशियारी नहीं राजा"
             )
         except Exception as e:
             logger.error(f"Error deleting message: {e}")
