@@ -32,7 +32,7 @@ async def delete_unwanted_messages(update: Update, context: ContextTypes.DEFAULT
             await message.delete()
             await context.bot.send_message(
                 chat_id=chat_id,
-                text="Links and @usernames are not allowed!"
+                text="@SK4FILM मेरे सामने होशियारी नहीं राजा"
             )
         except Exception as e:
             logger.error(f"Error deleting message or sending warning: {e}")
@@ -85,11 +85,14 @@ async def main() -> None:
 
 # Run the bot and the health check server concurrently
 if __name__ == "__main__":
-    # Start the bot
-    bot_task = asyncio.create_task(main())
+    # Create a new event loop explicitly
+    loop = asyncio.get_event_loop()
 
-    # Start the health check server
-    health_check_task = asyncio.create_task(asyncio.to_thread(run_health_check_server))
+    # Start the bot task
+    bot_task = loop.create_task(main())
 
-    # Run both concurrently
-    asyncio.get_event_loop().run_until_complete(asyncio.gather(bot_task, health_check_task))
+    # Start the health check server in a separate thread
+    health_check_task = loop.run_in_executor(None, run_health_check_server)
+
+    # Run both tasks concurrently
+    loop.run_until_complete(asyncio.gather(bot_task, health_check_task))
