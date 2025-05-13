@@ -1,16 +1,21 @@
 import re
 import asyncio
 
-def contains_link_or_username(text):
-    if not text:
-        return False
-    link_pattern = re.compile(r'https?://\S+|www\.\S+')
-    username_pattern = re.compile(r'@\w+')
-    return bool(link_pattern.search(text) or username_pattern.search(text))
+async def handle_message(update, context):
+    message = update.message
+    text = message.text
 
-async def delete_later(message, delay=300):
-    await asyncio.sleep(delay)
-    try:
-        await message.delete()
-    except:
-        pass
+    if re.search(r"(https?://|t\.me/|@[\w_]+)", text):
+        try:
+            await message.delete()
+            reply = await message.reply_text("मेरे सामने होशियारी नहीं")
+            await asyncio.sleep(180)
+            await reply.delete()
+        except Exception as e:
+            print(f"Failed to handle spam message: {e}")
+    else:
+        try:
+            await asyncio.sleep(300)  # 5 minutes
+            await message.delete()
+        except Exception as e:
+            print(f"Failed to delete normal message: {e}")
