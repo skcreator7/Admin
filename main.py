@@ -73,7 +73,7 @@ async def health_check(request):
 
 
 # Function to run the health check server
-async def run_health_check_server():
+async def start_health_check_server():
     app = web.Application()
     app.router.add_get("/", health_check)
     runner = web.AppRunner(app)
@@ -81,14 +81,16 @@ async def run_health_check_server():
     site = web.TCPSite(runner, "0.0.0.0", 8000)
     await site.start()
     logger.info("Health check server started on port 8000")
-    while True:
-        await asyncio.sleep(3600)  # Keep the server running
 
 
-# Main function to run the bot
-async def run_bot():
+async def main():
+    # Start the health check server as a background task
+    asyncio.create_task(start_health_check_server())
+
+    # Create the bot application
     application = ApplicationBuilder().token(BOT_TOKEN).build()
 
+    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, delete_unwanted_messages))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_message))
@@ -97,18 +99,8 @@ async def run_bot():
     await application.run_polling()
 
 
-async def main():
-    # Start both tasks concurrently
-    bot_task = asyncio.create_task(run_bot())
-    health_task = asyncio.create_task(run_health_check_server())
-
-    await asyncio.gather(bot_task, health_task)
-
-
 if __name__ == "__main__":
     try:
-        # Use get_event_loop() to avoid conflicts
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(main())
+        asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Bot and server stopped.")
+        logger.info("Bot and health check server stopped.")
