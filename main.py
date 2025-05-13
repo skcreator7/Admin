@@ -1,77 +1,72 @@
 import logging
 import os
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+import re
+from telegram import Update, ChatMember, ChatMemberUpdated
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
-from time import time
+import asyncio
 
-# Load environment variables from .env file
 load_dotenv()
 
-# Get the BOT_TOKEN from the environment variables
-TOKEN = os.getenv('BOT_TOKEN')
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
-if not TOKEN:
-    raise ValueError("BOT_TOKEN is not set in environment variables")
-
-# Set up logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Command to start the bot
-async def start(update: Update, context: CallbackContext) -> None:
-    """Send a welcome message when the /start command is used."""
-    await update.message.reply_text("Hello! I am your group management bot.")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Function to handle new member joins
-async def welcome(update: Update, context: CallbackContext) -> None:
-    """Welcome new members to the group."""
-    new_members = update.message.new_chat_members
-    for member in new_members:
-        await update.message.reply_text(f"Welcome {member.full_name} to the group!")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text("Hello! I'm your group management bot.")
 
-# Function to delete messages with links or @usernames
-async def delete_unwanted_messages(update: Update, context: CallbackContext) -> None:
-    """Delete messages containing links or @usernames."""
+async def delete_unwanted_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
+    chat_id = message.chat.id
+
     if 'http' in message.text or '@' in message.text:
-        await message.delete()
-        await update.message.reply_text("Links and @usernames are not allowed!")
+        try:
+            await message.delete()
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="Links and @usernames are not allowed!"
+            )
+        except Exception as e:
+            logger.error(f"Error deleting message or sending warning: {e}")
 
-# Function to automatically delete messages after 5 minutes
-async def auto_delete_message(update: Update, context: CallbackContext) -> None:
-    """Schedule a message to be deleted after 5 minutes."""
-    context.job_queue.run_once(delete_message, 300, context=update.message)
+async def auto_delete_messages(context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = context.job.chat_id
+    message_id = context.job.data
 
-async def delete_message(context: CallbackContext) -> None:
-    """Delete a message."""
-    await context.job.context.delete()
+    try:
+        await context.bot.delete_message(chat_id, message_id)
+    except Exception as e:
+        logger.error(f"Error auto-deleting message: {e}")
 
-# Handler for unknown commands
-async def unknown(update: Update, context: CallbackContext) -> None:
-    """Handle unknown commands."""
-    await update.message.reply_text("Sorry, I didn't understand that command.")
+async def handle_new_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.message
+    chat_id = message.chat.id
+    user_id = message.from_user.id
 
-# Main function to start the bot
+    admins = [admin.user.id for admin in await context.bot.get_chat_administrators(chat_id)]
+
+    if user_id not in admins:
+        context.job_queue.run_once(
+            auto_delete_messages,
+            when=300,
+            data=message.message_id,
+            chat_id=chat_id
+        )
+
+
 def main() -> None:
-    """Start the bot."""
-    # Create the Application and pass it your bot's token
-    application = Application.builder().token(TOKEN).build()
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Register command handlers
     application.add_handler(CommandHandler("start", start))
-    
-    # Register message handlers
-    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, delete_unwanted_messages))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_delete_message))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_message))
 
-    # Register unknown command handler
-    application.add_handler(MessageHandler(filters.COMMAND, unknown))
-
-    # Start the bot
     application.run_polling()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
