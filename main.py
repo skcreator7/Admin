@@ -10,7 +10,6 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 async def health_check(request):
     return web.Response(text="Healthy")
 
-# aiohttp app for health check
 async def start_web_server():
     app = web.Application()
     app.router.add_get("/", health_check)
@@ -20,14 +19,18 @@ async def start_web_server():
     await site.start()
     print("Health check server running on port 8080")
 
-# Telegram bot
 async def start_bot():
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     setup_handlers(application)
+    
     print("Telegram bot running...")
-    await application.run_polling()
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
 
-# Run both in same asyncio event loop
+    # Keep running
+    await asyncio.Event().wait()
+
 async def main():
     await asyncio.gather(
         start_web_server(),
