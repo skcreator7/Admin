@@ -70,7 +70,4 @@ async def main():
         logger.error(f"Runtime error: {e}")
 
 if __name__ == "__main__":
-    if asyncio.get_event_loop().is_running():
-        asyncio.ensure_future(main())
-    else:
-        asyncio.run(main())
+    asyncio.run(main())
