@@ -20,28 +20,53 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # Telegram Bot Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("Hello! I'm your group management bot.")
+    """Handler for the /start command"""
+    reply = await update.message.reply_text("Hello! I'm your group management bot.")
+    # Schedule the reply message for deletion after 3 minutes (180 seconds)
+    context.job_queue.run_once(
+        delete_message,
+        180,
+        data={'chat_id': reply.chat_id, 'message_id': reply.message_id}
+    )
 
 async def delete_unwanted_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Delete messages containing links or @mentions"""
     message = update.message
     if 'http' in message.text or '@' in message.text:
         try:
             await message.delete()
-            await context.bot.send_message(
+            # Send warning and schedule its deletion
+            warning = await context.bot.send_message(
                 chat_id=message.chat.id,
                 text="@Sk4Film मेरे सामने होशियारी नहीं राजा"
+            )
+            context.job_queue.run_once(
+                delete_message,
+                180,
+                data={'chat_id': warning.chat_id, 'message_id': warning.message_id}
             )
         except Exception as e:
             logger.error(f"Error deleting message: {e}")
 
+async def delete_message(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Delete a specific message"""
+    job_data = context.job.data
+    try:
+        await context.bot.delete_message(
+            chat_id=job_data['chat_id'],
+            message_id=job_data['message_id']
+        )
+    except Exception as e:
+        logger.error(f"Error deleting scheduled message: {e}")
+
 async def handle_new_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Auto-delete regular user messages after 5 minutes"""
     if update.message.from_user.id not in [admin.user.id for admin in 
-                                         await context.bot.get_chat_administrators(update.message.chat.id)]:
+                                        await context.bot.get_chat_administrators(update.message.chat.id)]:
         context.job_queue.run_once(
-            lambda ctx: ctx.bot.delete_message(ctx.job.chat_id, ctx.job.data),
-            300,
-            data=update.message.message_id,
-            chat_id=update.message.chat.id
+            delete_message,
+            300,  # 5 minutes
+            data={'chat_id': update.message.chat_id, 'message_id': update.message.message_id}
         )
 
 # Health Check Server
