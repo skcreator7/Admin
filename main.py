@@ -1,7 +1,7 @@
 import logging
 import os
 import re
-from telegram import Update, ChatMember, ChatMemberUpdated
+from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
 import asyncio
@@ -32,7 +32,7 @@ async def delete_unwanted_messages(update: Update, context: ContextTypes.DEFAULT
             await message.delete()
             await context.bot.send_message(
                 chat_id=chat_id,
-                text="@SK4FILM मेरे सामने होशियारी नहीं राजा"
+                text="Links and @usernames are not allowed!"
             )
         except Exception as e:
             logger.error(f"Error deleting message or sending warning: {e}")
@@ -68,10 +68,17 @@ async def health_check(request):
     return web.Response(text="OK")
 
 # Function to run the health check server
-def run_health_check_server():
+async def run_health_check_server():
     app = web.Application()
     app.router.add_get("/", health_check)
-    web.run_app(app, port=8000)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8000)
+    await site.start()
+    logger.info("Health check server started on port 8000")
+    # Keep running
+    while True:
+        await asyncio.sleep(3600)
 
 # Main function to run the bot
 async def main() -> None:
@@ -81,18 +88,14 @@ async def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, delete_unwanted_messages))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_message))
 
+    # Start health check server as a separate task
+    asyncio.create_task(run_health_check_server())
+
+    # Run the bot
     await application.run_polling()
 
-# Run the bot and the health check server concurrently
 if __name__ == "__main__":
-    # Create a new event loop explicitly
-    loop = asyncio.get_event_loop()
-
-    # Start the bot task
-    bot_task = loop.create_task(main())
-
-    # Start the health check server in a separate thread
-    health_check_task = loop.run_in_executor(None, run_health_check_server)
-
-    # Run both tasks concurrently
-    loop.run_until_complete(asyncio.gather(bot_task, health_check_task))
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Bot stopped.")
