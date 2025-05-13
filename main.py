@@ -1,41 +1,32 @@
 import asyncio
 import os
+import threading
 from telegram.ext import ApplicationBuilder, MessageHandler, filters
 from utils import handle_message
 from aiohttp import web
 
 TOKEN = os.getenv("BOT_TOKEN")
 
+# Health check handler
 async def health(request):
     return web.Response(text="Healthy")
 
-async def main():
-    application = ApplicationBuilder().token(TOKEN).build()
-
-    # Message handler
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # Health check route
+# Function to run aiohttp web server
+def start_health_server():
     app = web.Application()
     app.router.add_get("/", health)
+    web.run_app(app, port=8080)
 
-    # Run both bot and web server
-    async def run():
-        print("Bot is running...")
-        await asyncio.gather(
-            application.run_polling(),
-            web._run_app(app, port=8080)
-        )
-
-    await run()
+# Function to start the telegram bot
+async def start_bot():
+    application = ApplicationBuilder().token(TOKEN).build()
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    print("Bot is running...")
+    await application.run_polling()
 
 if __name__ == "__main__":
-    try:
-        asyncio.get_event_loop().run_until_complete(main())
-    except RuntimeError as e:
-        if "This event loop is already running" in str(e):
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(main())
-        else:
-            raise
+    # Start aiohttp health server in a separate thread
+    threading.Thread(target=start_health_server, daemon=True).start()
+
+    # Run bot in main thread
+    asyncio.run(start_bot())
