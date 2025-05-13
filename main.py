@@ -1,51 +1,41 @@
-import logging
 import asyncio
-from aiohttp import web
-from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters
-from utils import delete_later, contains_link_or_username
 import os
+from telegram.ext import ApplicationBuilder, MessageHandler, filters
+from utils import handle_message
+from aiohttp import web
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("BOT_TOKEN")
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-
-# Telegram Handlers
-async def start(update, context):
-    await update.message.reply_text("Bot is online!")
-
-async def handle_message(update, context):
-    message = update.message
-    if contains_link_or_username(message.text):
-        await message.delete()
-    else:
-        asyncio.create_task(delete_later(message, delay=300))  # 5 min
-
-# Health Check
 async def health(request):
-    return web.Response(text="OK")
+    return web.Response(text="Healthy")
 
-# Run aiohttp server for health check
-async def start_health_server():
+async def main():
+    application = ApplicationBuilder().token(TOKEN).build()
+
+    # Message handler
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # Health check route
     app = web.Application()
     app.router.add_get("/", health)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8000)
-    await site.start()
 
-# Main
-async def main():
-    await start_health_server()
+    # Run both bot and web server
+    async def run():
+        print("Bot is running...")
+        await asyncio.gather(
+            application.run_polling(),
+            web._run_app(app, port=8080)
+        )
 
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    
-    print("Bot is running...")
-    await application.run_polling()
+    await run()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.get_event_loop().run_until_complete(main())
+    except RuntimeError as e:
+        if "This event loop is already running" in str(e):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(main())
+        else:
+            raise
