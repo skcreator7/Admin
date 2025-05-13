@@ -1,74 +1,89 @@
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import os
-import re
 import logging
+import re
 import asyncio
-from datetime import datetime, timedelta
 from aiohttp import web
-from telegram import Update, ChatPermissions
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler,
-    filters, ContextTypes
-)
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Bot token from environment
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_IDS = {5928972764}  # <-- apna Telegram user ID daalo yahan
+# Your bot token from environment
+TOKEN = os.environ.get("BOT_TOKEN")
 
-# Start command (only admin)
-async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id in ADMIN_IDS:
-        await update.message.reply_text("Admin command successful.")
-    else:
-        await update.message.reply_text("You are not authorized.")
+# Simple admin check
+ADMIN_IDS = [123456789]  # Replace with your Telegram user ID
 
-# Filter and delete unwanted messages
-async def message_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    if not message or not message.text:
-        return
+# Warn counter
+warn_count = {}
 
-    text = message.text.lower()
-    if "http://" in text or "https://" in text or "@" in text:
+# Delete messages with links/usernames
+async def filter_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if re.search(r"(t\.me|http[s]?://|@[\w_]+)", update.message.text, re.IGNORECASE):
         try:
-            await message.delete()
+            await update.message.delete()
         except Exception as e:
-            logging.warning(f"Failed to delete message: {e}")
+            logger.warning(f"Failed to delete message: {e}")
+    else:
+        # Auto delete all messages after 5 minutes
+        await asyncio.sleep(300)
+        try:
+            await update.message.delete()
+        except:
+            pass
+
+# /warn command
+async def warn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
         return
 
-    # Schedule auto-delete after 5 minutes
-    try:
-        await asyncio.sleep(300)
-        await message.delete()
-    except:
-        pass
+    if not update.message.reply_to_message:
+        await update.message.reply_text("Reply to a user to warn them.")
+        return
 
-# Health check server (port 8080 for Koyeb)
-async def handle_health(request):
+    user_id = update.message.reply_to_message.from_user.id
+    warn_count[user_id] = warn_count.get(user_id, 0) + 1
+    count = warn_count[user_id]
+
+    await update.message.reply_text(f"User warned. Total warnings: {count}")
+
+    if count >= 3:
+        await update.message.reply_text("User muted for repeated violations.")
+
+# /admin command
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id in ADMIN_IDS:
+        await update.message.reply_text("You are an admin.")
+    else:
+        await update.message.reply_text("You are not an admin.")
+
+# Start command
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Bot is running.")
+
+# Health check endpoint
+async def health_check(request):
     return web.Response(text="OK")
 
-def start_health_server():
+def run_health_server():
     app = web.Application()
-    app.router.add_get("/", handle_health)
-    runner = web.AppRunner(app)
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(runner.setup())
-    site = web.TCPSite(runner, "0.0.0.0", 8080)
-    loop.run_until_complete(site.start())
-    logging.info("Health check server running on port 8080")
+    app.add_routes([web.get("/", health_check)])
+    web.run_app(app, port=8080)
 
-# Main function
 def main():
-    start_health_server()
+    app = ApplicationBuilder().token(TOKEN).build()
 
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(CommandHandler("warn", warn))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, filter_message))
 
-    app.add_handler(CommandHandler("admin", admin_command))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_filter))
+    # Start web server for health checks in background
+    asyncio.get_event_loop().create_task(asyncio.to_thread(run_health_server))
 
-    logging.info("Telegram bot running...")
+    print("Telegram bot running...")
     app.run_polling()
 
 if __name__ == "__main__":
