@@ -1,10 +1,10 @@
 import logging
 import os
+import asyncio
+from aiohttp import web
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
-import asyncio
-from aiohttp import web
 
 load_dotenv()
 
@@ -17,9 +17,11 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
+
 # Command to start the bot
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Hello! I'm your group management bot.")
+
 
 # Delete messages that contain links or @usernames
 async def delete_unwanted_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -36,6 +38,7 @@ async def delete_unwanted_messages(update: Update, context: ContextTypes.DEFAULT
         except Exception as e:
             logger.error(f"Error deleting message or sending warning: {e}")
 
+
 # Function to automatically delete messages after 5 minutes
 async def auto_delete_messages(context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = context.job.chat_id
@@ -45,6 +48,7 @@ async def auto_delete_messages(context: ContextTypes.DEFAULT_TYPE) -> None:
         await context.bot.delete_message(chat_id, message_id)
     except Exception as e:
         logger.error(f"Error auto-deleting message: {e}")
+
 
 # Handle new messages from users
 async def handle_new_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -62,9 +66,11 @@ async def handle_new_message(update: Update, context: ContextTypes.DEFAULT_TYPE)
             chat_id=chat_id
         )
 
+
 # Health check endpoint
 async def health_check(request):
     return web.Response(text="OK")
+
 
 # Function to run the health check server
 async def run_health_check_server():
@@ -76,24 +82,33 @@ async def run_health_check_server():
     await site.start()
     logger.info("Health check server started on port 8000")
     while True:
-        await asyncio.sleep(3600)  # Keep running
+        await asyncio.sleep(3600)  # Keep the server running
+
 
 # Main function to run the bot
-async def main() -> None:
+async def run_bot():
     application = ApplicationBuilder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, delete_unwanted_messages))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_message))
 
-    # Start health check server as a separate task
-    asyncio.create_task(run_health_check_server())
-
     # Run the bot
     await application.run_polling()
 
+
+async def main():
+    # Start both tasks concurrently
+    bot_task = asyncio.create_task(run_bot())
+    health_task = asyncio.create_task(run_health_check_server())
+
+    await asyncio.gather(bot_task, health_task)
+
+
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        # Use get_event_loop() to avoid conflicts
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(main())
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Bot stopped.")
+        logger.info("Bot and server stopped.")
