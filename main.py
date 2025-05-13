@@ -1,14 +1,18 @@
-import os
-import asyncio
 import logging
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
-from utils import delete_later, contains_link_or_username
+import asyncio
 from aiohttp import web
+from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters
+from utils import delete_later, contains_link_or_username
+import os
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
+# Telegram Handlers
 async def start(update, context):
     await update.message.reply_text("Bot is online!")
 
@@ -17,32 +21,31 @@ async def handle_message(update, context):
     if contains_link_or_username(message.text):
         await message.delete()
     else:
-        asyncio.create_task(delete_later(message, 300))
+        asyncio.create_task(delete_later(message, delay=300))  # 5 min
 
-async def health_check(request):
+# Health Check
+async def health(request):
     return web.Response(text="OK")
 
-async def start_bot():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    await app.initialize()
-    await app.start()
-    logging.info("Telegram bot running...")
-    await app.updater.start_polling()
-    await app.updater.idle()
-
-async def start_web():
+# Run aiohttp server for health check
+async def start_health_server():
     app = web.Application()
-    app.router.add_get("/", health_check)
+    app.router.add_get("/", health)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8000)
     await site.start()
-    logging.info("Health check server running...")
 
+# Main
 async def main():
-    await asyncio.gather(start_bot(), start_web())
+    await start_health_server()
+
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    
+    print("Bot is running...")
+    await application.run_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
