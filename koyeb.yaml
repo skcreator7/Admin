@@ -1,0 +1,11 @@
+name: telegram-group-management-bot
+
+services:
+  - name: bot-service
+    image:
+      dockerfile_path: ./Dockerfile
+    ports:
+      - http_port: 8000
+    env:
+      BOT_TOKEN: ${BOT_TOKEN}
+      
