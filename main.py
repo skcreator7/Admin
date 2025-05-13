@@ -1,133 +1,83 @@
+import logging
+import os
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-from telegram import ChatMember
-import logging
-import time
+from dotenv import load_dotenv
+from time import time
 
-# Enable logging
+# Load environment variables from .env file
+load_dotenv()
+
+# Get the BOT_TOKEN from the environment variables
+TOKEN = os.getenv('BOT_TOKEN')
+
+if not TOKEN:
+    raise ValueError("BOT_TOKEN is not set in environment variables")
+
+# Set up logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Your bot token (replace 'YOUR_TOKEN' with your actual bot token)
-TOKEN = 'YOUR_TOKEN'
-
-
-# Start command - to welcome new users and show bot information
+# Command to start the bot
 def start(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text(
-        "Hello! I am your group management bot. I can help you manage your group by performing various tasks.\n"
-        "Here are some commands you can use:\n"
-        "/setwelcome <message> - Set a welcome message\n"
-        "/showwelcome - Show the current welcome message"
-    )
+    """Send a welcome message when the /start command is used."""
+    update.message.reply_text("Hello! I am your group management bot.")
 
+# Function to handle new member joins
+def welcome(update: Update, context: CallbackContext) -> None:
+    """Welcome new members to the group."""
+    new_members = update.message.new_chat_members
+    for member in new_members:
+        update.message.reply_text(f"Welcome {member.full_name} to the group!")
 
-# Set welcome message
-def set_welcome(update: Update, context: CallbackContext) -> None:
-    if context.args:
-        welcome_message = ' '.join(context.args)
-        context.chat_data['welcome_message'] = welcome_message
-        update.message.reply_text(f"Welcome message set to: {welcome_message}")
-    else:
-        update.message.reply_text("Please provide a welcome message after the command.\nExample: /setwelcome Hello, welcome to the group!")
+# Function to delete messages with links or @usernames
+def delete_unwanted_messages(update: Update, context: CallbackContext) -> None:
+    """Delete messages containing links or @usernames."""
+    message = update.message
+    if 'http' in message.text or '@' in message.text:
+        message.delete()
+        update.message.reply_text("Links and @usernames are not allowed!")
 
-
-# Show current welcome message
-def show_welcome(update: Update, context: CallbackContext) -> None:
-    welcome_message = context.chat_data.get('welcome_message', None)
-    if welcome_message:
-        update.message.reply_text(f"Current welcome message: {welcome_message}")
-    else:
-        update.message.reply_text("No welcome message set yet.")
-
-
-# Handle new users joining the group
-def welcome_new_member(update: Update, context: CallbackContext) -> None:
-    new_user = update.message.new_chat_members[0]
-    welcome_message = context.chat_data.get('welcome_message', "Welcome to the group!")
-    update.message.reply_text(f"{welcome_message} {new_user.first_name}!")
-
-
-# Delete messages containing links or usernames (@)
-def delete_links_and_usernames(update: Update, context: CallbackContext) -> None:
-    message_text = update.message.text
-
-    # Check if the message contains a link or @username
-    if "http" in message_text or "@" in message_text:
-        # Delete the message
-        update.message.delete()
-
-        # Send a warning message to the user
-        update.message.reply_text(
-            "Links and usernames (@) are not allowed here. Please refrain from sending such messages."
-        )
-
-
-# Function to automatically delete user messages after 5 minutes
+# Function to automatically delete messages after 5 minutes
 def auto_delete_message(update: Update, context: CallbackContext) -> None:
-    user_id = update.message.from_user.id
-    chat_id = update.message.chat_id
+    """Schedule a message to be deleted after 5 minutes."""
+    context.job_queue.run_once(delete_message, 300, context=update.message)
 
-    # Get the message's timestamp (this is in seconds)
-    timestamp = time.time()
-
-    # Delay of 5 minutes (300 seconds)
-    context.job_queue.run_once(delete_message, 300, context=(chat_id, update.message.message_id))
-
-
-# Delete the message after 5 minutes
 def delete_message(context: CallbackContext) -> None:
-    chat_id, message_id = context.job.context
-    try:
-        context.bot.delete_message(chat_id, message_id)
-    except Exception as e:
-        logger.error(f"Failed to delete message: {e}")
+    """Delete a message."""
+    context.job.context.delete()
 
+# Handler for unknown commands
+def unknown(update: Update, context: CallbackContext) -> None:
+    """Handle unknown commands."""
+    update.message.reply_text("Sorry, I didn't understand that command.")
 
-# Function to determine if the user is an admin
-def is_admin(update: Update) -> bool:
-    user = update.message.from_user
-    chat_id = update.message.chat_id
+# Main function to start the bot
+def main() -> None:
+    """Start the bot."""
+    # Create the Updater and pass it your bot's token
+    updater = Updater(TOKEN, use_context=True)
 
-    # Get the chat member status (whether the user is an admin)
-    member = update.bot.get_chat_member(chat_id, user.id)
-    return member.status in [ChatMember.ADMINISTRATOR, ChatMember.CREATOR]
-
-
-# Message handler to delete non-admin user messages after 5 minutes
-def handle_user_message(update: Update, context: CallbackContext) -> None:
-    if not is_admin(update):  # Only auto-delete non-admin messages
-        auto_delete_message(update, context)
-
-
-# Main function to set up the bot
-def main():
-    # Create an Updater object and attach the dispatcher
-    updater = Updater(TOKEN)
+    # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
 
-    # Command Handlers
-    dispatcher.add_handler(CommandHandler('start', start))
-    dispatcher.add_handler(CommandHandler('setwelcome', set_welcome))
-    dispatcher.add_handler(CommandHandler('showwelcome', show_welcome))
+    # Register command handlers
+    dispatcher.add_handler(CommandHandler("start", start))
+    
+    # Register message handlers
+    dispatcher.add_handler(MessageHandler(Filters.status_update.new_chat_members, welcome))
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, delete_unwanted_messages))
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, auto_delete_message))
 
-    # Message Handler to welcome new members
-    dispatcher.add_handler(MessageHandler(Filters.status_update.new_chat_members, welcome_new_member))
-
-    # Message Handler to delete messages containing links or usernames
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, delete_links_and_usernames))
-
-    # Message Handler for general user messages (auto delete after 5 minutes)
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_user_message))
+    # Register unknown command handler
+    dispatcher.add_handler(MessageHandler(Filters.command, unknown))
 
     # Start the Bot
     updater.start_polling()
 
-    # Run the bot until you send a signal to stop it
+    # Run the bot until you send a signal to stop
     updater.idle()
 
-
-# Run the bot
 if __name__ == '__main__':
     main()
