@@ -1,6 +1,5 @@
 import logging
 import os
-import re
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
@@ -76,9 +75,8 @@ async def run_health_check_server():
     site = web.TCPSite(runner, "0.0.0.0", 8000)
     await site.start()
     logger.info("Health check server started on port 8000")
-    # Keep running
     while True:
-        await asyncio.sleep(3600)
+        await asyncio.sleep(3600)  # Keep running
 
 # Main function to run the bot
 async def main() -> None:
