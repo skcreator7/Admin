@@ -6,7 +6,6 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
 # Configure logging
@@ -18,58 +17,58 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Telegram Bot Handlers
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handler for the /start command"""
-    reply = await update.message.reply_text("Hello! I'm @Sk4Film management bot.")
-    # Schedule the reply message for deletion after 3 minutes (180 seconds)
+# Global dictionary to track bot's sent messages
+bot_messages = {}
+
+async def delete_bot_message(context: ContextTypes.DEFAULT_TYPE):
+    """Delete a bot message after delay"""
+    try:
+        chat_id = context.job.data['chat_id']
+        message_id = context.job.data['message_id']
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        logger.info(f"Deleted bot message {message_id} in chat {chat_id}")
+    except Exception as e:
+        logger.error(f"Failed to delete bot message: {e}")
+
+async def schedule_bot_message_deletion(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int):
+    """Schedule a bot message for deletion after 3 minutes (180 seconds)"""
     context.job_queue.run_once(
-        delete_message,
-        180,
-        data={'chat_id': reply.chat_id, 'message_id': reply.message_id}
+        delete_bot_message,
+        180,  # 3 minutes in seconds
+        data={'chat_id': chat_id, 'message_id': message_id},
+        name=f"delete_{chat_id}_{message_id}"
     )
 
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /start command"""
+    reply = await update.message.reply_text("Hello! I'm @Sk4Film management bot.")
+    await schedule_bot_message_deletion(context, reply.chat_id, reply.message_id)
+
 async def delete_unwanted_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Delete messages containing links or @mentions"""
+    """Delete messages with links or mentions"""
     message = update.message
     if 'http' in message.text or '@' in message.text:
         try:
             await message.delete()
-            # Send warning and schedule its deletion
             warning = await context.bot.send_message(
                 chat_id=message.chat.id,
                 text="@Sk4Film मेरे सामने होशियारी नहीं राजा"
             )
-            context.job_queue.run_once(
-                delete_message,
-                180,
-                data={'chat_id': warning.chat_id, 'message_id': warning.message_id}
-            )
+            await schedule_bot_message_deletion(context, warning.chat_id, warning.message_id)
         except Exception as e:
-            logger.error(f"Error deleting message: {e}")
-
-async def delete_message(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Delete a specific message"""
-    job_data = context.job.data
-    try:
-        await context.bot.delete_message(
-            chat_id=job_data['chat_id'],
-            message_id=job_data['message_id']
-        )
-    except Exception as e:
-        logger.error(f"Error deleting scheduled message: {e}")
+            logger.error(f"Error processing message: {e}")
 
 async def handle_new_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Auto-delete regular user messages after 5 minutes"""
     if update.message.from_user.id not in [admin.user.id for admin in 
-                                        await context.bot.get_chat_administrators(update.message.chat.id)]:
+                                         await context.bot.get_chat_administrators(update.message.chat.id)]:
         context.job_queue.run_once(
-            delete_message,
+            delete_bot_message,
             300,  # 5 minutes
-            data={'chat_id': update.message.chat_id, 'message_id': update.message.message_id}
+            data={'chat_id': update.message.chat_id, 'message_id': update.message.message_id},
+            name=f"delete_user_msg_{update.message.message_id}"
         )
 
-# Health Check Server
 async def health_check(request):
     return web.Response(text="OK")
 
@@ -85,7 +84,6 @@ async def start_health_server():
 async def run_bot():
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     
-    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, delete_unwanted_messages))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_message))
@@ -101,18 +99,15 @@ async def main():
     bot = None
     
     try:
-        # Start both services
         health_server = await start_health_server()
         bot = await run_bot()
         
-        # Keep running forever
         while True:
             await asyncio.sleep(3600)
             
     except asyncio.CancelledError:
         logger.info("Shutting down...")
     finally:
-        # Cleanup
         if bot:
             await bot.updater.stop()
             await bot.stop()
