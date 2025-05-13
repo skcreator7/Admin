@@ -21,7 +21,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 # Telegram Bot Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handler for the /start command"""
-    reply = await update.message.reply_text("Hello! I'm your group management bot.")
+    reply = await update.message.reply_text("Hello! I'm @Sk4Film management bot.")
     # Schedule the reply message for deletion after 3 minutes (180 seconds)
     context.job_queue.run_once(
         delete_message,
