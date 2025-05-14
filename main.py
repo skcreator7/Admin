@@ -28,6 +28,7 @@ class TelegramBot:
         self.runner = None
         self.site = None
         self.stop_event = asyncio.Event()
+        self.AUTO_DELETE_TIME = 180  # 3 minutes in seconds
 
     async def delete_message(self, context: ContextTypes.DEFAULT_TYPE):
         try:
@@ -40,10 +41,10 @@ class TelegramBot:
             logger.error(f"Error deleting message: {e}")
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        reply = await update.message.reply_text("Hello! I'm your group management bot.")
+        reply = await update.message.reply_text("Hello! I'm your group management bot. I'll auto-delete messages after 3 minutes.")
         context.job_queue.run_once(
             self.delete_message,
-            180,
+            self.AUTO_DELETE_TIME,
             chat_id=reply.chat_id,
             data=reply.message_id,
             name=f"del_{reply.message_id}"
@@ -72,19 +73,19 @@ class TelegramBot:
                         # Schedule warning deletion
                         context.job_queue.run_once(
                             self.delete_message,
-                            180,
+                            self.AUTO_DELETE_TIME,
                             chat_id=warning.chat_id,
                             data=warning.message_id,
                             name=f"del_warn_{warning.message_id}"
                         )
-                        return  # Skip further processing if message was deleted
+                        return
                     except Exception as e:
                         logger.error(f"Immediate deletion error: {e}")
                 
-                # Schedule regular message deletion
+                # Schedule regular message deletion (3 minutes)
                 context.job_queue.run_once(
                     self.delete_message,
-                    300,  # 5 minutes
+                    self.AUTO_DELETE_TIME,
                     chat_id=message.chat_id,
                     data=message.message_id,
                     name=f"del_msg_{message.message_id}"
@@ -93,7 +94,7 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Message processing error: {e}")
 
-    # ... [keep the rest of your methods unchanged] ...
+    # ... [rest of your methods remain unchanged] ...
 
     async def initialize_bot(self):
         self.application = (
@@ -113,6 +114,6 @@ class TelegramBot:
 
         await self.application.initialize()
         await self.application.start()
-        logger.info("Bot initialized")
+        logger.info(f"Bot initialized - Auto-delete time set to {self.AUTO_DELETE_TIME} seconds")
 
     # ... [rest of your code remains the same] ...
