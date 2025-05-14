@@ -33,7 +33,7 @@ class TelegramBot:
         self.runner = None
         self.site = None
         self.stop_event = asyncio.Event()
-        self.AUTO_DELETE_TIME = 180  # 3 minutes in seconds
+        self.AUTO_DELETE_TIME = 120  # 3 minutes in seconds
 
     async def delete_message(self, context: ContextTypes.DEFAULT_TYPE):
         try:
@@ -48,7 +48,7 @@ class TelegramBot:
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             reply = await update.message.reply_text(
-                "Hello! I'm your group management bot. I'll auto-delete messages after 3 minutes."
+                "Hello! I'm @Sk4Film group management bot"
             )
             context.job_queue.run_once(
                 self.delete_message,
@@ -80,7 +80,7 @@ class TelegramBot:
                         await message.delete()
                         warning = await context.bot.send_message(
                             chat_id=message.chat.id,
-                            text="⚠️ Links and @usernames are not allowed!"
+                            text="⚠️ @Sk4Film मेरे सामने होशियारी नहीं राजा"
                         )
                         # Schedule warning deletion
                         context.job_queue.run_once(
