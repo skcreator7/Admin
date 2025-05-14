@@ -4,7 +4,7 @@ import asyncio
 from aiohttp import web
 from telegram import Update
 from telegram.ext import (
-    Application,
+    ApplicationBuilder,
     CommandHandler,
     MessageHandler,
     filters,
@@ -12,6 +12,7 @@ from telegram.ext import (
 )
 from dotenv import load_dotenv
 
+# Load environment variables
 load_dotenv()
 
 # Configure logging
@@ -23,95 +24,112 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-class BotManager:
+class AutoDeleteBot:
     def __init__(self):
         self.application = None
-        self.runner = None
-        self.site = None
-        self.stop_event = asyncio.Event()
+        self.health_server = None
 
-    async def delete_message(self, context: ContextTypes.DEFAULT_TYPE):
-        """Delete a specific message"""
+    async def delete_message_job(self, context: ContextTypes.DEFAULT_TYPE):
+        """Job to delete a specific message"""
         try:
             await context.bot.delete_message(
                 chat_id=context.job.chat_id,
                 message_id=context.job.data
             )
-            logger.info(f"Deleted message {context.job.data}")
+            logger.info(f"Successfully deleted message {context.job.data}")
         except Exception as e:
-            logger.error(f"Error deleting message: {e}")
+            logger.error(f"Failed to delete message: {e}")
+            # Retry in 30 seconds if failed
+            await asyncio.sleep(30)
+            context.job_queue.run_once(
+                self.delete_message_job,
+                0,  # Run immediately
+                chat_id=context.job.chat_id,
+                data=context.job.data,
+                name=f"retry_del_{context.job.data}"
+            )
+
+    async def schedule_deletion(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int, delay: int):
+        """Schedule a message for deletion"""
+        job_name = f"del_{chat_id}_{message_id}"
+        
+        # Cancel any existing job for this message
+        current_jobs = context.job_queue.get_jobs_by_name(job_name)
+        for job in current_jobs:
+            job.schedule_removal()
+        
+        # Schedule new deletion
+        context.job_queue.run_once(
+            self.delete_message_job,
+            delay,
+            chat_id=chat_id,
+            data=message_id,
+            name=job_name
+        )
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
-        reply = await update.message.reply_text("Hello! I'm your group management bot.")
-        context.job_queue.run_once(
-            self.delete_message,
-            180,  # 3 minutes
-            chat_id=reply.chat_id,
-            data=reply.message_id,
-            name=f"del_{reply.message_id}"
-        )
+        try:
+            reply = await update.message.reply_text("Hello! I'm @Sk4Film management bot.")
+            await self.schedule_deletion(context, reply.chat_id, reply.message_id, 180)  # 3 minutes
+        except Exception as e:
+            logger.error(f"Start command error: {e}")
 
     async def delete_unwanted_messages(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Delete messages with links or mentions"""
-        message = update.message
-        if 'http' in message.text or '@' in message.text:
-            try:
+        try:
+            message = update.message
+            if 'http' in message.text or '@' in message.text:
                 await message.delete()
                 warning = await context.bot.send_message(
                     chat_id=message.chat.id,
-                    text="⚠️ Links and @usernames are not allowed!"
+                    text="⚠️ @Sk4Film मेरे सामने होशियारी नहीं राजा"
                 )
-                context.job_queue.run_once(
-                    self.delete_message,
-                    180,  # 3 minutes
-                    chat_id=warning.chat_id,
-                    data=warning.message_id,
-                    name=f"del_warn_{warning.message_id}"
-                )
-            except Exception as e:
-                logger.error(f"Message deletion error: {e}")
+                await self.schedule_deletion(context, warning.chat_id, warning.message_id, 180)  # 3 minutes
+        except Exception as e:
+            logger.error(f"Message deletion error: {e}")
 
     async def handle_new_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Auto-delete regular user messages after 5 minutes"""
         try:
-            if update.message.from_user.id not in [
-                admin.user.id for admin in 
-                await context.bot.get_chat_administrators(update.message.chat.id)
-            ]:
-                context.job_queue.run_once(
-                    self.delete_message,
-                    300,  # 5 minutes
-                    chat_id=update.message.chat_id,
-                    data=update.message.message_id,
-                    name=f"del_msg_{update.message.message_id}"
+            # Get chat administrators
+            admins = await context.bot.get_chat_administrators(update.message.chat.id)
+            admin_ids = [admin.user.id for admin in admins]
+            
+            # Check if sender is not admin
+            if update.message.from_user.id not in admin_ids:
+                await self.schedule_deletion(
+                    context,
+                    update.message.chat_id,
+                    update.message.message_id,
+                    300  # 5 minutes
                 )
         except Exception as e:
             logger.error(f"Message handling error: {e}")
 
     async def health_check(self, request):
-        """Health check endpoint"""
         return web.Response(text="Bot is running")
 
-    async def start_web_server(self):
-        """Start the web server for health checks"""
+    async def start_health_server(self):
+        """Start health check server"""
         app = web.Application()
         app.router.add_get("/", self.health_check)
-        self.runner = web.AppRunner(app)
-        await self.runner.setup()
-        self.site = web.TCPSite(self.runner, "0.0.0.0", 8000)
-        await self.site.start()
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", 8000)
+        await site.start()
         logger.info("Health check server running on port 8000")
+        return runner
 
-    async def initialize_bot(self):
-        """Initialize the Telegram bot application"""
+    async def run_bot(self):
+        """Initialize and run the bot"""
         self.application = (
-            Application.builder()
+            ApplicationBuilder()
             .token(BOT_TOKEN)
             .concurrent_updates(True)
             .build()
         )
-
+        
         # Add handlers
         self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(
@@ -120,89 +138,32 @@ class BotManager:
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_new_message)
         )
-
-        await self.application.initialize()
-        await self.application.start()
-        logger.info("Bot initialized")
-
-    async def run_polling(self):
-        """Run the bot in polling mode with proper error handling"""
-        try:
-            while not self.stop_event.is_set():
-                try:
-                    await self.application.updater.start_polling()
-                    await self.stop_event.wait()
-                except Exception as e:
-                    logger.error(f"Polling error: {e}")
-                    await asyncio.sleep(5)  # Wait before retrying
-        finally:
-            await self.cleanup()
+        
+        # Start services
+        self.health_server = await self.start_health_server()
+        
+        # Start polling
+        await self.application.run_polling()
 
     async def cleanup(self):
         """Cleanup resources"""
         logger.info("Cleaning up resources...")
-        
-        # Stop the updater if it's running
-        if self.application and hasattr(self.application, 'updater'):
-            try:
-                await self.application.updater.stop()
-            except Exception as e:
-                logger.error(f"Error stopping updater: {e}")
-
-        # Stop the application
+        if self.health_server:
+            await self.health_server.cleanup()
         if self.application:
-            try:
-                await self.application.stop()
-                await self.application.shutdown()
-            except Exception as e:
-                logger.error(f"Error stopping application: {e}")
-
-        # Stop the web server
-        if self.site:
-            await self.site.stop()
-        if self.runner:
-            await self.runner.cleanup()
-        
-        logger.info("Cleanup complete")
-
-    async def run(self):
-        """Main entry point for the bot"""
-        try:
-            await self.start_web_server()
-            await self.initialize_bot()
-            
-            # Start the polling in a separate task
-            polling_task = asyncio.create_task(self.run_polling())
-            
-            # Keep the main task running
-            while not self.stop_event.is_set():
-                await asyncio.sleep(1)
-                
-        except KeyboardInterrupt:
-            logger.info("Received keyboard interrupt")
-            self.stop_event.set()
-        except Exception as e:
-            logger.error(f"Bot crashed: {e}", exc_info=True)
-            self.stop_event.set()
-        finally:
-            await self.cleanup()
+            await self.application.shutdown()
 
 async def main():
-    bot = BotManager()
+    bot = AutoDeleteBot()
     try:
-        await bot.run()
+        await bot.run_bot()
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
     except Exception as e:
-        logger.error(f"Fatal error: {e}", exc_info=True)
+        logger.error(f"Bot crashed: {e}", exc_info=True)
+    finally:
+        await bot.cleanup()
 
 if __name__ == "__main__":
-    # Use asyncio.run() only if there isn't already a running event loop
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(main())
-        else:
-            asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Application stopped by user")
-    except Exception as e:
-        logger.error(f"Application error: {e}", exc_info=True)
+    # Make sure to install with: pip install "python-telegram-bot[job-queue]"
+    asyncio.run(main())
