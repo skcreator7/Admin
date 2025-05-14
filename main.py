@@ -71,7 +71,8 @@ class TelegramBot:
             admins = await context.bot.get_chat_administrators(update.message.chat.id)
             admin_ids = [admin.user.id for admin in admins]
 
-            if update.message.from_user.id not in admin_ids:
+            # Ensure message is not from a bot or admin
+            if (not update.message.from_user.is_bot) and (update.message.from_user.id not in admin_ids):
                 context.job_queue.run_once(
                     self.delete_message,
                     300,
