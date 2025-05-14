@@ -119,12 +119,9 @@ class TelegramBot:
     async def run_polling(self):
         while not self.stop_event.is_set():
             try:
+                # Corrected polling call without unsupported parameters
                 await self.application.updater.start_polling(
-                    drop_pending_updates=True,
-                    timeout=10,
-                    connect_timeout=10,
-                    read_timeout=10,
-                    write_timeout=10
+                    drop_pending_updates=True
                 )
                 await self.stop_event.wait()
             except Exception as e:
