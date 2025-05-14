@@ -44,62 +44,56 @@ class TelegramBot:
         context.job_queue.run_once(
             self.delete_message,
             180,
-            chat_id=reply.chat.id,
+            chat_id=reply.chat_id,
             data=reply.message_id,
             name=f"del_{reply.message_id}"
         )
 
-    async def handle_messages(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def process_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        message = update.message
+        if not message.text:  # Skip if not a text message
+            return
+
         try:
-            # Check for unwanted content
-            if 'http' in update.message.text or '@' in update.message.text:
-                await update.message.delete()
-                warning = await context.bot.send_message(
-                    chat_id=update.message.chat.id,
-                    text="⚠️ Links and @usernames are not allowed!"
-                )
-                context.job_queue.run_once(
-                    self.delete_message,
-                    180,
-                    chat_id=warning.chat.id,
-                    data=warning.message_id,
-                    name=f"del_warn_{warning.message_id}"
-                )
-                return
-
-            # Handle auto-deletion of regular user messages
-            admins = await context.bot.get_chat_administrators(update.message.chat.id)
+            # Get admin list
+            admins = await context.bot.get_chat_administrators(message.chat.id)
             admin_ids = [admin.user.id for admin in admins]
-
-            # Ensure message is not from a bot or admin
-            if (not update.message.from_user.is_bot) and (update.message.from_user.id not in admin_ids):
+            
+            # If user is not admin, process deletion
+            if message.from_user.id not in admin_ids:
+                # Immediate deletion for links/mentions
+                if 'http' in message.text.lower() or '@' in message.text:
+                    try:
+                        await message.delete()
+                        warning = await context.bot.send_message(
+                            chat_id=message.chat.id,
+                            text="⚠️ Links and @usernames are not allowed!"
+                        )
+                        # Schedule warning deletion
+                        context.job_queue.run_once(
+                            self.delete_message,
+                            180,
+                            chat_id=warning.chat_id,
+                            data=warning.message_id,
+                            name=f"del_warn_{warning.message_id}"
+                        )
+                        return  # Skip further processing if message was deleted
+                    except Exception as e:
+                        logger.error(f"Immediate deletion error: {e}")
+                
+                # Schedule regular message deletion
                 context.job_queue.run_once(
                     self.delete_message,
-                    300,
-                    chat_id=update.message.chat.id,
-                    data=update.message.message_id,
-                    name=f"del_msg_{update.message.message_id}"
+                    300,  # 5 minutes
+                    chat_id=message.chat_id,
+                    data=message.message_id,
+                    name=f"del_msg_{message.message_id}"
                 )
+                
         except Exception as e:
-            logger.error(f"Error handling message: {e}")
+            logger.error(f"Message processing error: {e}")
 
-    async def health_check(self, request):
-        return web.Response(text="Bot is running")
-
-    async def start_web_server(self):
-        app = web.Application()
-        app.router.add_get("/", self.health_check)
-        self.runner = web.AppRunner(app)
-        await self.runner.setup()
-        self.site = web.TCPSite(self.runner, "0.0.0.0", 8000)
-        await self.site.start()
-        logger.info("Health check server running on port 8000")
-
-    def initialize_handlers(self):
-        self.application.add_handler(CommandHandler("start", self.start))
-        self.application.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_messages)
-        )
+    # ... [keep the rest of your methods unchanged] ...
 
     async def initialize_bot(self):
         self.application = (
@@ -108,49 +102,17 @@ class TelegramBot:
             .concurrent_updates(True)
             .build()
         )
-        self.initialize_handlers()
+
+        self.application.add_handler(CommandHandler("start", self.start))
+        
+        # Combined message handler
+        message_filter = filters.TEXT & ~filters.COMMAND & ~filters.UpdateType.EDITED_MESSAGE
+        self.application.add_handler(
+            MessageHandler(message_filter, self.process_message)
+        )
+
         await self.application.initialize()
         await self.application.start()
         logger.info("Bot initialized")
 
-    async def cleanup(self):
-        logger.info("Cleaning up resources...")
-        try:
-            if self.application:
-                await self.application.stop()
-                await self.application.shutdown()
-            if self.site:
-                await self.site.stop()
-            if self.runner:
-                await self.runner.cleanup()
-        except Exception as e:
-            logger.error(f"Error during cleanup: {e}")
-        logger.info("Cleanup complete")
-
-    async def run(self):
-        try:
-            await self.start_web_server()
-            await self.initialize_bot()
-            while not self.stop_event.is_set():
-                await asyncio.sleep(1)
-        except KeyboardInterrupt:
-            logger.info("Received keyboard interrupt")
-        except Exception as e:
-            logger.error(f"Bot crashed: {e}", exc_info=True)
-        finally:
-            self.stop_event.set()
-            await self.cleanup()
-
-async def main():
-    bot = TelegramBot()
-    await bot.run()
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Application stopped by user")
-    except Exception as e:
-        logger.error(f"Application error: {e}", exc_info=True)
-    finally:
-        logger.info("Application shutdown complete")
+    # ... [rest of your code remains the same] ...
