@@ -1,14 +1,18 @@
 import logging
 import os
 import asyncio
+import re
 from aiohttp import web
-from telegram import Update
+from telegram import Update, ChatMemberUpdated, ChatJoinRequest, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
     filters,
     ContextTypes,
+    ChatMemberHandler,
+    ChatJoinRequestHandler,
+    CallbackQueryHandler,
 )
 from dotenv import load_dotenv
 
@@ -33,9 +37,14 @@ class TelegramBot:
         self.runner = None
         self.site = None
         self.stop_event = asyncio.Event()
-        self.AUTO_DELETE_TIME = 120  # 3 minutes in seconds
+        self.AUTO_DELETE_TIME = 120  # 2 minutes in seconds
+        self.DELETE_LINK_MESSAGE = True  # Auto-delete messages with links/usernames
+        
+        # Store message IDs to delete later
+        self.bot_messages = {}
 
     async def delete_message(self, context: ContextTypes.DEFAULT_TYPE):
+        """Delete a message after delay"""
         try:
             await context.bot.delete_message(
                 chat_id=context.job.chat_id,
@@ -45,74 +54,311 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Error deleting message: {e}")
 
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def auto_approve_join_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Automatically approve chat join requests"""
         try:
-            reply = await update.message.reply_text(
-                "Hello! I'm @Sk4Film group management bot"
-            )
-            context.job_queue.run_once(
-                self.delete_message,
-                self.AUTO_DELETE_TIME,
-                chat_id=reply.chat_id,
-                data=reply.message_id,
-                name=f"del_{reply.message_id}"
-            )
-        except Exception as e:
-            logger.error(f"Error in start command: {e}")
-
-    async def process_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        try:
-            message = update.message
-            if not message or not message.text:
-                return
-
-            logger.debug(f"Processing message from {message.from_user.id} in {message.chat.id}")
-
-            # Get admin list
-            admins = await context.bot.get_chat_administrators(message.chat.id)
-            admin_ids = [admin.user.id for admin in admins]
+            join_request: ChatJoinRequest = update.chat_join_request
+            user = join_request.from_user
             
-            # If user is not admin, process deletion
-            if message.from_user.id not in admin_ids:
-                # Immediate deletion for links/mentions
-                if 'http' in message.text.lower() or '@' in message.text:
-                    try:
-                        await message.delete()
-                        warning = await context.bot.send_message(
-                            chat_id=message.chat.id,
-                            text="⚠️ @Sk4Film मेरे सामने होशियारी नहीं राजा"
-                        )
-                        # Schedule warning deletion
-                        context.job_queue.run_once(
-                            self.delete_message,
-                            self.AUTO_DELETE_TIME,
-                            chat_id=warning.chat_id,
-                            data=warning.message_id,
-                            name=f"del_warn_{warning.message_id}"
-                        )
-                        return
-                    except Exception as e:
-                        logger.error(f"Immediate deletion error: {e}")
+            # Approve the join request
+            await join_request.approve()
+            logger.info(f"Auto-approved join request for user {user.id} ({user.full_name}) in chat {join_request.chat.id}")
+            
+            # Optional: Send welcome message
+            try:
+                welcome_msg = await context.bot.send_message(
+                    chat_id=join_request.chat.id,
+                    text=f"🎉 Welcome {user.mention_html()} to the group!\n\n"
+                         f"Please read the group rules and enjoy your stay!",
+                    parse_mode='HTML'
+                )
+                # Schedule welcome message deletion after 30 seconds
+                context.job_queue.run_once(
+                    self.delete_message,
+                    30,
+                    chat_id=welcome_msg.chat_id,
+                    data=welcome_msg.message_id,
+                    name=f"del_welcome_{welcome_msg.message_id}"
+                )
+            except Exception as e:
+                logger.error(f"Error sending welcome message: {e}")
                 
-                # Schedule regular message deletion
+        except Exception as e:
+            logger.error(f"Error auto-approving join request: {e}")
+
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /start command with image and colorful buttons"""
+        try:
+            # Image URL (you can replace with your own image URL)
+            image_url = "https://i.ibb.co/VYB5J028/x.jpg"  # Replace with your actual image URL
+            
+            # Create colorful buttons
+            keyboard = [
+                [
+                    InlineKeyboardButton(
+                        text="📢 Official Channel", 
+                        url="https://t.me/+0iMDc7jCLThkNmRl",
+                        callback_data="channel"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="🌐 Official Website", 
+                        url="https://sk4film.vercel.app/",
+                        callback_data="website"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="📱 Android App", 
+                        url="https://t.me/How_to_Download_Sk/102",
+                        callback_data="app"
+                    )
+                ]
+            ]
+            
+            # Apply color styles using emojis and formatting
+            # Note: Telegram buttons don't support custom colors directly,
+            # but we can use emojis and text styling
+            keyboard[0][0].text = "🔵 📢 Official Channel"  # Blue style
+            keyboard[1][0].text = "🟢 🌐 Official Website"  # Green style
+            keyboard[2][0].text = "🔴 📱 Android App"      # Red style
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Caption text with formatting
+            caption = (
+                "✨ *Welcome to SK4Film Bot!* ✨\n\n"
+                "🎬 *Your Ultimate Entertainment Partner*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "🌟 *Connect with us:*\n"
+                "• Get latest updates\n"
+                "• Access exclusive content\n"
+                "• Download Android App\n\n"
+                "👇 *Click the buttons below to explore!* 👇"
+            )
+            
+            # Try to send with image first
+            try:
+                # For better compatibility, we'll use a photo message
+                # You can upload your photo to Telegram and use file_id
+                # For now, we'll use a text message with buttons
+                
+                # Method 1: Send photo with caption (if you have a photo file_id or URL)
+                # You can replace this with your actual photo file_id from Telegram
+                # For example: with open('welcome.jpg', 'rb') as photo:
+                #     await update.message.reply_photo(photo, caption=caption, parse_mode='Markdown', reply_markup=reply_markup)
+                
+                # Method 2: Send text with buttons (fallback)
+                message = await update.message.reply_text(
+                    caption + "\n\n" +
+                    "🔵 **Official Channel**\n"
+                    "═══════════════════\n"
+                    "📢 Join our channel for daily updates\n"
+                    "[Click Here](https://t.me/+0iMDc7jCLThkNmRl)\n\n"
+                    "🟢 **Official Website**\n"
+                    "═══════════════════\n"
+                    "🌐 Visit our website for more content\n"
+                    "[Click Here](https://sk4film.vercel.app/)\n\n"
+                    "🔴 **Android App**\n"
+                    "═══════════════════\n"
+                    "📱 Download our app for best experience\n"
+                    "[Click Here](https://t.me/How_to_Download_Sk/102)\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    "_Click the buttons below to visit!_",
+                    parse_mode='Markdown',
+                    reply_markup=reply_markup,
+                    disable_web_page_preview=True
+                )
+                
+                # Schedule message deletion
                 context.job_queue.run_once(
                     self.delete_message,
                     self.AUTO_DELETE_TIME,
                     chat_id=message.chat_id,
                     data=message.message_id,
-                    name=f"del_msg_{message.message_id}"
+                    name=f"del_{message.message_id}"
                 )
+                
+            except Exception as e:
+                logger.error(f"Error sending message with image: {e}")
+                # Fallback: Simple text message
+                message = await update.message.reply_text(
+                    "🤖 *SK4Film Bot*\n\n"
+                    "• Official Channel: https://t.me/+0iMDc7jCLThkNmRl\n"
+                    "• Official Website: https://sk4film.vercel.app/\n"
+                    "• Android App: https://t.me/How_to_Download_Sk/102",
+                    parse_mode='Markdown',
+                    reply_markup=reply_markup
+                )
+                
+        except Exception as e:
+            logger.error(f"Error in start command: {e}")
+            # Super fallback
+            await update.message.reply_text(
+                "🤖 Bot is running!\nUse the buttons below to access our resources.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📢 Channel", url="https://t.me/+0iMDc7jCLThkNmRl")],
+                    [InlineKeyboardButton("🌐 Website", url="https://sk4film.vercel.app/")],
+                    [InlineKeyboardButton("📱 App", url="https://t.me/How_to_Download_Sk/102")]
+                ])
+            )
+
+    async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle button callbacks"""
+        query = update.callback_query
+        await query.answer()  # Acknowledge the button press
+        
+        # You can add custom responses for button clicks
+        if query.data == "channel":
+            await query.message.reply_text(
+                "📢 **Joining Official Channel**\n\n"
+                "Click the link above to join our official Telegram channel!\n"
+                "Get daily updates, news, and exclusive content.",
+                parse_mode='Markdown'
+            )
+        elif query.data == "website":
+            await query.message.reply_text(
+                "🌐 **Official Website**\n\n"
+                "Visit our website for:\n"
+                "• Latest updates\n"
+                "• Exclusive content\n"
+                "• Support & Help\n\n"
+                "[SK4Film Website](https://sk4film.vercel.app/)",
+                parse_mode='Markdown'
+            )
+        elif query.data == "app":
+            await query.message.reply_text(
+                "📱 **Android App**\n\n"
+                "Download our official Android app for:\n"
+                "• Better experience\n"
+                "• Faster updates\n"
+                "• Exclusive features\n\n"
+                "[Download Now](https://t.me/How_to_Download_Sk/102)",
+                parse_mode='Markdown'
+            )
+
+    async def is_admin(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> bool:
+        """Check if a user is an admin in the chat"""
+        try:
+            admins = await context.bot.get_chat_administrators(chat_id)
+            admin_ids = [admin.user.id for admin in admins]
+            return user_id in admin_ids
+        except Exception as e:
+            logger.error(f"Error checking admin status: {e}")
+            return False
+
+    async def has_link_or_mention(self, text: str) -> bool:
+        """Check if message contains link or username mention"""
+        patterns = [
+            r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+',
+            r'www\.[a-zA-Z0-9-]+(?:\.[a-zA-Z]{2,})+(?:/[^\s]*)?',
+            r't\.me/[a-zA-Z0-9_]+',
+            r'@[a-zA-Z0-9_]+',
+            r'🔗',
+            r'⚡️',
+        ]
+        
+        for pattern in patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                return True
+        return False
+
+    async def process_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Process all messages"""
+        try:
+            message = update.message
+            if not message or not message.text:
+                return
+
+            # Check if user is admin
+            is_user_admin = await self.is_admin(context, message.chat.id, message.from_user.id)
+            
+            # If user is admin, don't delete anything
+            if is_user_admin:
+                logger.debug(f"Admin {message.from_user.id} message - not deleting")
+                return
+
+            logger.debug(f"Processing non-admin message from {message.from_user.id}")
+            
+            # Check for links/usernames in message
+            if self.DELETE_LINK_MESSAGE and await self.has_link_or_mention(message.text):
+                try:
+                    await message.delete()
+                    logger.info(f"Deleted message with link/username from non-admin {message.from_user.id}")
+                    
+                    warning = await context.bot.send_message(
+                        chat_id=message.chat.id,
+                        text="⚠️ Links and username mentions are not allowed for non-admin members!",
+                        reply_to_message_id=message.message_id
+                    )
+                    context.job_queue.run_once(
+                        self.delete_message,
+                        10,
+                        chat_id=warning.chat_id,
+                        data=warning.message_id,
+                        name=f"del_warn_{warning.message_id}"
+                    )
+                    return
+                except Exception as e:
+                    logger.error(f"Error deleting link message: {e}")
+            
+            # Schedule regular message deletion
+            context.job_queue.run_once(
+                self.delete_message,
+                self.AUTO_DELETE_TIME,
+                chat_id=message.chat_id,
+                data=message.message_id,
+                name=f"del_msg_{message.message_id}"
+            )
+            logger.debug(f"Scheduled deletion for message {message.message_id} in {self.AUTO_DELETE_TIME}s")
                 
         except Exception as e:
             logger.error(f"Message processing error: {e}", exc_info=True)
 
+    async def track_chat_members(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Track when new members join via invite links"""
+        try:
+            chat_member_update: ChatMemberUpdated = update.chat_member
+            old_status = chat_member_update.old_chat_member.status
+            new_status = chat_member_update.new_chat_member.status
+            user = chat_member_update.new_chat_member.user
+            
+            if (old_status in ['left', 'kicked'] and new_status == 'member') or new_status == 'member':
+                if not await self.is_admin(context, chat_member_update.chat.id, user.id):
+                    logger.info(f"User {user.id} ({user.full_name}) joined the chat via invite link")
+                    
+                    try:
+                        warning_msg = await context.bot.send_message(
+                            chat_id=chat_member_update.chat.id,
+                            text=f"👋 Welcome {user.first_name}!\n\n"
+                                 f"Please note: Messages with links or @mentions will be automatically deleted.\n"
+                                 f"All non-admin messages will be deleted after {self.AUTO_DELETE_TIME} seconds.",
+                            parse_mode='HTML'
+                        )
+                        context.job_queue.run_once(
+                            self.delete_message,
+                            60,
+                            chat_id=warning_msg.chat_id,
+                            data=warning_msg.message_id,
+                            name=f"del_welcome_warning_{warning_msg.message_id}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error sending welcome warning: {e}")
+                        
+        except Exception as e:
+            logger.error(f"Error tracking chat members: {e}")
+
     async def health_check(self, request):
+        """Health check endpoint"""
         return web.Response(text="Bot is running")
 
     async def start_web_server(self):
+        """Start health check web server"""
         try:
             app = web.Application()
             app.router.add_get("/", self.health_check)
+            app.router.add_get("/health", self.health_check)
             self.runner = web.AppRunner(app)
             await self.runner.setup()
             self.site = web.TCPSite(self.runner, "0.0.0.0", 8000)
@@ -123,6 +369,7 @@ class TelegramBot:
             raise
 
     async def initialize_bot(self):
+        """Initialize bot with all handlers"""
         try:
             self.application = (
                 Application.builder()
@@ -131,11 +378,22 @@ class TelegramBot:
                 .build()
             )
 
-            # Combined message handler
-            message_filter = filters.TEXT & ~filters.COMMAND & ~filters.UpdateType.EDITED_MESSAGE
+            # Command handlers
             self.application.add_handler(CommandHandler("start", self.start))
+            
+            # Button callback handler
+            self.application.add_handler(CallbackQueryHandler(self.button_callback))
+            
+            # Auto-approve join requests
+            self.application.add_handler(ChatJoinRequestHandler(self.auto_approve_join_request))
+            
+            # Track new members joining via invite links
+            self.application.add_handler(ChatMemberHandler(self.track_chat_members, ChatMemberHandler.CHAT_MEMBER))
+            
+            # Message handler for non-admin messages with links/usernames
+            message_filter = filters.TEXT & ~filters.COMMAND & ~filters.UpdateType.EDITED_MESSAGE
             self.application.add_handler(MessageHandler(message_filter, self.process_message))
-
+            
             await self.application.initialize()
             await self.application.start()
             logger.info("Bot initialized successfully")
@@ -144,6 +402,7 @@ class TelegramBot:
             raise
 
     async def run_bot(self):
+        """Run bot with polling"""
         try:
             logger.info("Starting bot polling...")
             await self.application.updater.start_polling(drop_pending_updates=True)
@@ -158,6 +417,7 @@ class TelegramBot:
             await self.shutdown()
 
     async def shutdown(self):
+        """Shutdown bot gracefully"""
         logger.info("Shutting down bot...")
         try:
             if hasattr(self, 'application') and self.application:
@@ -179,15 +439,11 @@ class TelegramBot:
         logger.info("Shutdown complete")
 
     async def run(self):
+        """Main run method"""
         try:
             await self.start_web_server()
             await self.initialize_bot()
-            
-            # Run both tasks
-            await asyncio.gather(
-                self.run_bot(),
-                return_exceptions=True
-            )
+            await self.run_bot()
         except Exception as e:
             logger.error(f"Fatal error in bot: {e}", exc_info=True)
         finally:
@@ -195,6 +451,7 @@ class TelegramBot:
             await self.shutdown()
 
 async def main():
+    """Main entry point"""
     logger.info("Starting bot...")
     bot = TelegramBot()
     try:
