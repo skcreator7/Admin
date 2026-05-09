@@ -1,6 +1,7 @@
 import random
 import asyncio
 import re
+import os
 from telethon import TelegramClient, events, types, functions
 from telethon.tl.types import MessageEntityTextUrl
 import logging
@@ -12,10 +13,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Bot Configuration
-API_ID = 'YOUR_API_ID'  # Get from my.telegram.org
-API_HASH = 'YOUR_API_HASH'  # Get from my.telegram.org
-BOT_TOKEN = 'YOUR_BOT_TOKEN'  # From @BotFather
+# Bot Configuration - Read from Environment Variables
+API_ID = int(os.getenv('API_ID', '0'))  # Convert to int
+API_HASH = os.getenv('API_HASH', '')
+BOT_TOKEN = os.getenv('BOT_TOKEN', '')
+
+# Validate credentials
+if not API_ID or API_ID == 0:
+    logger.error("API_ID not set! Please set API_ID environment variable")
+    exit(1)
+
+if not API_HASH:
+    logger.error("API_HASH not set! Please set API_HASH environment variable")
+    exit(1)
+
+if not BOT_TOKEN:
+    logger.error("BOT_TOKEN not set! Please set BOT_TOKEN environment variable")
+    exit(1)
 
 # Image URL
 IMAGE_URL = "https://i.ibb.co/VYB5J028/x.jpg"
@@ -28,6 +42,8 @@ APP_LINK = "https://t.me/How_to_Download_Sk/102"
 # Auto-delete time (5 minutes = 300 seconds)
 AUTO_DELETE_TIME = 300
 
+# Initialize client
+logger.info(f"Starting bot with API_ID: {API_ID}")
 client = TelegramClient('sk4film_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 # Store message IDs for auto-deletion
@@ -35,8 +51,8 @@ messages_to_delete = {}
 
 async def delete_message_after_delay(chat_id, message_id, delay):
     """Delete message after specified delay"""
-    await asyncio.sleep(delay)
     try:
+        await asyncio.sleep(delay)
         await client.delete_messages(chat_id, message_id)
         logger.info(f"Deleted message {message_id} after {delay}s")
     except Exception as e:
@@ -185,15 +201,18 @@ async def auto_approve_join_request(event):
             types.KeyboardButtonRow(buttons=[app_button])
         ])
         
+        # Get user info
+        user = await event.get_user()
+        
         caption = (
-            f"✨ **Welcome to SK4FILM!** ✨\n\n"
-            "🎬 **Your Ultimate Entertainment Partner**\n"
+            f"✨ **Welcome {user.first_name}!** ✨\n\n"
+            "🎬 **SK4FILM Community**\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n\n"
             "⚠️ **Group Rules:**\n"
             "• ❌ No links or @mentions\n"
             "• ⏰ Messages auto-delete after 5 minutes\n"
             "• 👑 Admins are exempt from rules\n\n"
-            "👇 **Click colored buttons to explore** 👇"
+            "👇 **Click colored buttons below to explore** 👇"
         )
         
         try:
@@ -223,9 +242,9 @@ async def handle_button_click(event):
         # Answer the callback
         if event.data == b"channel":
             await event.answer("Opening Official Channel...")
-            await event.edit(
+            msg = await event.edit(
                 f"📢 **Join Our Official Channel**\n\n"
-                f"Click here to join: {CHANNEL_LINK}\n\n"
+                f"🔗 {CHANNEL_LINK}\n\n"
                 f"_This message will auto-delete in 30 seconds._",
                 parse_mode='markdown'
             )
@@ -236,9 +255,9 @@ async def handle_button_click(event):
             
         elif event.data == b"website":
             await event.answer("Opening Official Website...")
-            await event.edit(
+            msg = await event.edit(
                 f"🌐 **Visit Our Official Website**\n\n"
-                f"Click here to visit: {WEBSITE_LINK}\n\n"
+                f"🔗 {WEBSITE_LINK}\n\n"
                 f"_This message will auto-delete in 30 seconds._",
                 parse_mode='markdown'
             )
@@ -248,9 +267,9 @@ async def handle_button_click(event):
             
         elif event.data == b"app":
             await event.answer("Getting Android App...")
-            await event.edit(
+            msg = await event.edit(
                 f"📱 **Download Android App**\n\n"
-                f"Click here to download: {APP_LINK}\n\n"
+                f"🔗 {APP_LINK}\n\n"
                 f"_This message will auto-delete in 30 seconds._",
                 parse_mode='markdown'
             )
@@ -266,7 +285,7 @@ async def process_message(event):
     """Process all messages - delete links from non-admins"""
     try:
         # Ignore commands and bot's own messages
-        if event.is_private or event.out or event.message.text.startswith('/'):
+        if event.is_private or event.out or (event.message.text and event.message.text.startswith('/')):
             return
         
         # Get sender info
@@ -286,7 +305,7 @@ async def process_message(event):
             return
         
         # Check for links or mentions
-        message_text = event.message.text
+        message_text = event.message.text or ""
         has_link = bool(re.search(r'http[s]?://|www\.|t\.me/|@', message_text, re.IGNORECASE))
         
         # If has link/mention, delete immediately
@@ -378,11 +397,12 @@ async def member_joined(event):
     except Exception as e:
         logger.error(f"Error in member joined handler: {e}")
 
-print("🎨 SK4FILM Bot with True Colored Buttons Started! 🚀")
-print("✅ Auto-approve join requests - ACTIVE")
-print("✅ Admin message protection - ACTIVE")
-print("✅ Delete links from non-admins - ACTIVE")
-print("✅ Auto-delete after 5 minutes - ACTIVE")
-print("✅ True colored buttons - ACTIVE (Green, Blue, Red)")
+logger.info("🎨 SK4FILM Bot with True Colored Buttons Started! 🚀")
+logger.info("✅ Auto-approve join requests - ACTIVE")
+logger.info("✅ Admin message protection - ACTIVE")
+logger.info("✅ Delete links from non-admins - ACTIVE")
+logger.info("✅ Auto-delete after 5 minutes - ACTIVE")
+logger.info("✅ True colored buttons - ACTIVE (Green, Blue, Red)")
 
+print("Bot started successfully!")
 client.run_until_disconnected()
