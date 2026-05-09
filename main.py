@@ -101,16 +101,15 @@ class TelegramBot:
                 
                 # Using HTML instead of Markdown to avoid parsing issues
                 private_caption = (
-                    f"✨ <b>Welcome {user.first_name}!</b> ✨\n\n"
-                    f"✅ <b>Join Approved!</b>\n\n"
-                    f"🎬 <b>Your Ultimate Entertainment Partner</b>\n"
+                    f"✨ <b>Hey {user.first_name} Join Req. Approved</b> ✅\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"💬 <a href='https://t.me/skadminrobot'>Connect with Admin</a>\n"
-                    f"• 📢 Get latest Movies\n"
-                    f"• 🌐 Access exclusive content\n"
-                    f"• 📱 <a href='https://t.me/How_to_Download_Sk/102'>Download our Android App</a>\n"
-                    f"• Respect all members\n\n"
-                    f"<i>Enjoy your stay! 🎉</i>"
+                    f"🔎 <b>MOVIES SEARCH GROUP</b>\n"
+                    f"❂»» <a href='https://t.me/+aH09R6aMoM81MWQ1'>Cʟɪᴄᴋ Hᴇʀᴇ ««❂</a>\n\n"
+                    f"🪩 <b>Movies Website</b>\n"
+                    f"❂»» <a href='https://sk4film.vercel.app/'>Cʟɪᴄᴋ Hᴇʀᴇ ««❂</a>\n\n"
+                    f"🔞 <b>Viral Pörn Videos</b>\n"
+                    f"❂»» <a href='https://t.me/xxx_Video_Here'>Cʟɪᴄᴋ Hᴇʀᴇ ««❂</a>\n\n"
+                    f"• 😍 <i>Respect all members</i>\n"
                 )
                 
                 # Send PRIVATE message (using send_message to user, not to group)
