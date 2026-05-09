@@ -1,8 +1,10 @@
-import random
 import asyncio
 import re
 import os
-from telethon import TelegramClient, events, types
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+from pyrogram.enums import ChatMemberStatus
+from pyrogram.errors import FloodWait
 import logging
 
 # Configure logging
@@ -32,219 +34,343 @@ if not BOT_TOKEN:
 
 # Configuration
 IMAGE_URL = "https://i.ibb.co/VYB5J028/x.jpg"
-CHANNEL_LINK = "https://t.me/+0iMDc7jCLThkNmRl"
-WEBSITE_LINK = "https://sk4film.vercel.app/"
-APP_LINK = "https://t.me/How_to_Download_Sk/102"
+OFFICIAL_LINK = "https://t.me/+0iMDc7jCLThkNmRl"
+MOVIES_LINK = "https://sk4film.vercel.app/"
+ANDROID_LINK = "https://t.me/How_to_Download_Sk/102"
 AUTO_DELETE_TIME = 300
 
-# Initialize client
-client = TelegramClient('sk4film_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+# Initialize Pyrogram Client
+app = Client("sk4film_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 async def delete_message_after_delay(chat_id, message_id, delay):
     """Delete message after delay"""
     try:
         await asyncio.sleep(delay)
-        await client.delete_messages(chat_id, message_id)
+        await app.delete_messages(chat_id, message_id)
         logger.info(f"Deleted message {message_id}")
     except Exception as e:
         logger.error(f"Error deleting message: {e}")
 
-@client.on(events.NewMessage(pattern='/start'))
-async def start(event):
-    """Handle /start command"""
+@app.on_message(filters.command("start"))
+async def start_command(client, message):
+    """Handle /start command with colored buttons"""
     try:
-        await event.delete()
+        await message.delete()
         
-        keyboard = [
-            [types.KeyboardButtonUrl(text="🟢 OFFICIAL CHANNEL", url=CHANNEL_LINK)],
-            [types.KeyboardButtonUrl(text="🔵 OFFICIAL WEBSITE", url=WEBSITE_LINK)],
-            [types.KeyboardButtonUrl(text="🔴 ANDROID APP", url=APP_LINK)]
-        ]
-        
-        reply_markup = types.ReplyInlineMarkup(keyboard)
+        # Create colored buttons with custom emoji icons
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    text="🔵 OFFICIAL CHANNEL",
+                    callback_data="official_btn",
+                    # Custom emoji (Premium feature - optional)
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🟢 MOVIES WEBSITE",
+                    callback_data="movies_btn"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔴 ANDROID APP",
+                    callback_data="android_btn"
+                )
+            ]
+        ])
         
         caption = (
             "✨ **WELCOME TO SK4FILM BOT** ✨\n\n"
             "🎬 **Your Ultimate Entertainment Partner**\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            "🌟 **What We Offer:**\n"
-            "• 📢 Latest movie updates\n"
-            "• 🎯 Exclusive content\n"
-            "• 📱 Android App access\n"
-            "• 💬 24/7 support\n\n"
-            "👇 **Click buttons below to explore** 👇\n\n"
+            "🌟 **Choose an option below:**\n\n"
+            "🔵 **Official Channel** - Get latest updates\n"
+            "🟢 **Movies Website** - Browse exclusive content\n"
+            "🔴 **Android App** - Download & install\n\n"
+            "👇 **Click colored buttons below** 👇\n\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
             "_Thank you for choosing SK4Film!_ 🎉"
         )
         
         try:
-            result = await client.send_file(
-                event.chat_id,
-                IMAGE_URL,
+            # Send image with buttons
+            msg = await message.reply_photo(
+                photo=IMAGE_URL,
                 caption=caption,
-                parse_mode='markdown',
-                reply_markup=reply_markup
+                parse_mode="markdown",
+                reply_markup=keyboard
             )
         except:
-            result = await client.send_message(
-                event.chat_id,
+            # Fallback to text message
+            msg = await message.reply_text(
                 caption,
-                parse_mode='markdown',
-                reply_markup=reply_markup
+                parse_mode="markdown",
+                reply_markup=keyboard,
+                disable_web_page_preview=True
+            )
+        
+        # Schedule auto-deletion
+        asyncio.create_task(
+            delete_message_after_delay(message.chat.id, msg.id, AUTO_DELETE_TIME)
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in start command: {e}")
+        await message.reply_text(
+            "🤖 Bot is running! Send /help for commands.",
+            parse_mode="markdown"
+        )
+
+@app.on_message(filters.command("help"))
+async def help_command(client, message):
+    """Help command"""
+    help_text = (
+        "📚 **SK4FILM Bot Commands**\n\n"
+        "/start - Start the bot\n"
+        "/help - Show this help message\n"
+        "/ping - Check bot status\n"
+        "/rules - Show group rules\n\n"
+        "**Features:**\n"
+        "✅ Auto-approve join requests\n"
+        "✅ Delete links from non-admins\n"
+        "✅ Auto-delete messages after 5 minutes\n"
+        "✅ Welcome new members\n"
+        "✅ Colored buttons"
+    )
+    await message.reply_text(help_text, parse_mode="markdown")
+
+@app.on_message(filters.command("ping"))
+async def ping_command(client, message):
+    """Ping command"""
+    await message.reply_text("🏓 Pong! Bot is alive and working!")
+
+@app.on_message(filters.command("rules"))
+async def rules_command(client, message):
+    """Show group rules"""
+    rules = (
+        "📜 **SK4FILM Group Rules**\n\n"
+        "1️⃣ No links or @mentions allowed\n"
+        "2️⃣ No spam or promotional content\n"
+        "3️⃣ Respect all members\n"
+        "4️⃣ Admins' decisions are final\n"
+        "5️⃣ Non-admin messages auto-delete after 5 minutes\n\n"
+        "⚠️ Violations may result in ban!"
+    )
+    await message.reply_text(rules, parse_mode="markdown")
+
+@app.on_chat_join_request()
+async def auto_approve_join_request(client, join_request):
+    """Auto approve join requests"""
+    try:
+        await join_request.approve()
+        logger.info(f"Auto-approved join request from {join_request.from_user.id}")
+        
+        # Send welcome message with colored buttons
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔵 OFFICIAL CHANNEL", callback_data="official_btn")],
+            [InlineKeyboardButton("🟢 MOVIES WEBSITE", callback_data="movies_btn")],
+            [InlineKeyboardButton("🔴 ANDROID APP", callback_data="android_btn")]
+        ])
+        
+        caption = (
+            f"✨ **Welcome {join_request.from_user.first_name}!** ✨\n\n"
+            "🎬 **SK4FILM Community**\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "⚠️ **Group Rules:**\n"
+            "• ❌ No links or @mentions\n"
+            "• ⏰ Messages auto-delete after 5 minutes\n"
+            "• 👑 Admins are exempt from rules\n\n"
+            "👇 **Click colored buttons to explore** 👇"
+        )
+        
+        try:
+            await client.send_photo(
+                chat_id=join_request.chat.id,
+                photo=IMAGE_URL,
+                caption=caption,
+                parse_mode="markdown",
+                reply_markup=keyboard
+            )
+        except:
+            await client.send_message(
+                chat_id=join_request.chat.id,
+                text=caption,
+                parse_mode="markdown",
+                reply_markup=keyboard
             )
             
-        asyncio.create_task(
-            delete_message_after_delay(event.chat_id, result.id, AUTO_DELETE_TIME)
-        )
-            
     except Exception as e:
-        logger.error(f"Error in start: {e}")
+        logger.error(f"Error in auto-approve: {e}")
 
-@client.on(events.ChatAction)
-async def welcome_new_members(event):
+@app.on_message(filters.new_chat_members)
+async def welcome_new_members(client, message):
     """Welcome new members"""
     try:
-        if event.user_joined or event.users_joined:
-            users = event.users_joined if event.users_joined else [event.user_id]
+        for new_member in message.new_chat_members:
+            if new_member.id == client.me.id:
+                continue
             
-            for user_id in users:
-                try:
-                    user = await client.get_entity(user_id)
-                    
-                    if user.is_self:
-                        continue
-                    
-                    # Check if admin
-                    try:
-                        chat_admins = await client.get_participants(event.chat_id, filter=types.ChannelParticipantsAdmins)
-                        admin_ids = [admin.id for admin in chat_admins]
-                        if user.id in admin_ids:
-                            continue
-                    except:
-                        pass
-                    
-                    keyboard = [
-                        [types.KeyboardButtonUrl(text="🟢 JOIN CHANNEL", url=CHANNEL_LINK)],
-                        [types.KeyboardButtonUrl(text="🔵 VISIT WEBSITE", url=WEBSITE_LINK)],
-                        [types.KeyboardButtonUrl(text="🔴 DOWNLOAD APP", url=APP_LINK)]
-                    ]
-                    
-                    reply_markup = types.ReplyInlineMarkup(keyboard)
-                    
-                    caption = (
-                        f"✨ **Welcome {user.first_name}!** ✨\n\n"
-                        "🎬 **SK4FILM Community**\n"
-                        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                        "⚠️ **Group Rules:**\n"
-                        "• ❌ No links or @mentions\n"
-                        "• ⏰ Messages auto-delete after 5 minutes\n"
-                        "• 👑 Admins are exempt\n\n"
-                        "👇 **Click buttons below** 👇"
-                    )
-                    
-                    try:
-                        await client.send_file(
-                            event.chat_id,
-                            IMAGE_URL,
-                            caption=caption,
-                            parse_mode='markdown',
-                            reply_markup=reply_markup
-                        )
-                    except:
-                        await client.send_message(
-                            event.chat_id,
-                            caption,
-                            parse_mode='markdown',
-                            reply_markup=reply_markup
-                        )
-                        
-                except Exception as e:
-                    logger.error(f"Error welcoming user: {e}")
-                    
+            # Check if admin
+            try:
+                chat_member = await client.get_chat_member(message.chat.id, new_member.id)
+                if chat_member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
+                    continue
+            except:
+                pass
+            
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔵 OFFICIAL CHANNEL", callback_data="official_btn")],
+                [InlineKeyboardButton("🟢 MOVIES WEBSITE", callback_data="movies_btn")],
+                [InlineKeyboardButton("🔴 ANDROID APP", callback_data="android_btn")]
+            ])
+            
+            caption = (
+                f"✨ **Welcome {new_member.first_name}!** ✨\n\n"
+                "🎬 **SK4FILM Community**\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "⚠️ **Important Rules:**\n"
+                "• No links or @mentions\n"
+                "• Messages auto-delete after 5 minutes\n\n"
+                "👇 **Click colored buttons below** 👇"
+            )
+            
+            try:
+                await client.send_photo(
+                    chat_id=message.chat.id,
+                    photo=IMAGE_URL,
+                    caption=caption,
+                    parse_mode="markdown",
+                    reply_markup=keyboard
+                )
+            except:
+                await client.send_message(
+                    chat_id=message.chat.id,
+                    text=caption,
+                    parse_mode="markdown",
+                    reply_markup=keyboard
+                )
+                
     except Exception as e:
-        logger.error(f"Error in chat action: {e}")
+        logger.error(f"Error welcoming member: {e}")
 
-@client.on(events.NewMessage)
-async def process_message(event):
-    """Process messages"""
+@app.on_message(filters.text & filters.group)
+async def process_message(client, message):
+    """Process all messages - delete links from non-admins"""
     try:
-        if event.is_private or event.out or (event.message.text and event.message.text.startswith('/')):
+        # Ignore bot's own messages
+        if message.from_user.is_self or message.from_user.id == client.me.id:
             return
         
+        # Check if user is admin
         try:
-            sender = await event.get_sender()
-            if not sender:
-                return
-        except:
-            return
-        
-        # Check if admin
-        try:
-            chat_admins = await client.get_participants(event.chat_id, filter=types.ChannelParticipantsAdmins)
-            admin_ids = [admin.id for admin in chat_admins]
-            is_admin = sender.id in admin_ids
+            chat_member = await client.get_chat_member(message.chat.id, message.from_user.id)
+            is_admin = chat_member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]
         except:
             is_admin = False
         
-        # Admin messages - keep
+        # Admin messages - NEVER delete
         if is_admin:
+            logger.debug(f"Admin {message.from_user.id} message - not deleting")
             return
         
-        # Check for links
-        message_text = event.message.text or ""
-        has_link = bool(re.search(r'http[s]?://|www\.|t\.me/|@', message_text, re.IGNORECASE))
+        # Check for links or mentions
+        text = message.text or message.caption or ""
+        has_link = bool(re.search(r'http[s]?://|www\.|t\.me/|@', text, re.IGNORECASE))
         
+        # If has link/mention, delete immediately
         if has_link:
             try:
-                await event.delete()
-                logger.info(f"Deleted link from {sender.id}")
+                await message.delete()
+                logger.info(f"Deleted link message from non-admin {message.from_user.id}")
                 
-                warning = await client.send_message(
-                    event.chat_id,
-                    "⚠️ **ACCESS DENIED!**\n\nLinks and @mentions are not allowed.\n\n_This message will self-destruct in 10 seconds._",
-                    parse_mode='markdown',
-                    reply_to=event.message.id
+                # Send warning
+                warning = await message.reply_text(
+                    "⚠️ **ACCESS DENIED!**\n\nLinks and @mentions are not allowed for non-admin members.\n\n_This message will self-destruct in 10 seconds._",
+                    parse_mode="markdown"
                 )
                 
+                # Schedule warning deletion
                 asyncio.create_task(
-                    delete_message_after_delay(event.chat_id, warning.id, 10)
+                    delete_message_after_delay(message.chat.id, warning.id, 10)
                 )
                 return
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Error deleting message: {e}")
         
-        # Schedule deletion
+        # Schedule regular message deletion (5 minutes)
         asyncio.create_task(
-            delete_message_after_delay(event.chat_id, event.message.id, AUTO_DELETE_TIME)
+            delete_message_after_delay(message.chat.id, message.id, AUTO_DELETE_TIME)
+        )
+        logger.debug(f"Scheduled deletion for message {message.id}")
+        
+    except FloodWait as e:
+        logger.warning(f"Flood wait: {e.value} seconds")
+        await asyncio.sleep(e.value)
+    except Exception as e:
+        logger.error(f"Error processing message: {e}")
+
+@app.on_callback_query()
+async def handle_buttons(client, callback_query: CallbackQuery):
+    """Handle colored button clicks"""
+    messages = {
+        "official_btn": "🔵 **OFFICIAL CHANNEL**\n\nJoin our official channel for latest updates!\n\nLink: " + OFFICIAL_LINK,
+        "movies_btn": "🟢 **MOVIES WEBSITE**\n\nVisit our website for exclusive content!\n\nLink: " + MOVIES_LINK,
+        "android_btn": "🔴 **ANDROID APP**\n\nDownload our app for best experience!\n\nLink: " + ANDROID_LINK
+    }
+    
+    try:
+        # Show alert with link
+        await callback_query.answer(
+            "Opening link... 🔗",
+            show_alert=False
+        )
+        
+        # Send the link in chat
+        msg = await callback_query.message.reply_text(
+            messages.get(callback_query.data, "Button clicked!"),
+            parse_mode="markdown",
+            disable_web_page_preview=False
+        )
+        
+        # Auto-delete after 30 seconds
+        asyncio.create_task(
+            delete_message_after_delay(callback_query.message.chat.id, msg.id, 30)
         )
         
     except Exception as e:
-        logger.error(f"Error processing: {e}")
+        logger.error(f"Error in callback: {e}")
 
 async def main():
+    """Main function"""
     logger.info("🎨 SK4FILM Bot Started! 🚀")
-    logger.info("✅ Auto-welcome new members - ACTIVE")
+    logger.info("✅ Auto-approve join requests - ACTIVE")
     logger.info("✅ Admin message protection - ACTIVE")
     logger.info("✅ Delete links/mentions - ACTIVE")
     logger.info("✅ Auto-delete after 5 minutes - ACTIVE")
-    logger.info("✅ Styled buttons - ACTIVE")
+    logger.info("✅ Colored buttons - ACTIVE")
     
-    print("\n" + "="*50)
+    print("\n" + "="*60)
     print("🤖 SK4FILM BOT IS RUNNING SUCCESSFULLY!")
-    print("="*50)
-    print(f"📢 Channel: {CHANNEL_LINK}")
-    print(f"🌐 Website: {WEBSITE_LINK}")
-    print(f"📱 App: {APP_LINK}")
-    print("="*50 + "\n")
+    print("="*60)
+    print(f"🔵 Official Channel: {OFFICIAL_LINK}")
+    print(f"🟢 Movies Website: {MOVIES_LINK}")
+    print(f"🔴 Android App: {ANDROID_LINK}")
+    print("="*60)
+    print("\n📱 Commands available:")
+    print("   /start - Start the bot")
+    print("   /help - Show help")
+    print("   /ping - Check status")
+    print("   /rules - Show rules")
+    print("="*60 + "\n")
     
-    await client.run_until_disconnected()
+    # Keep bot running
+    await client.idle()
 
 if __name__ == "__main__":
-    # Simple run without web server
-    loop = asyncio.get_event_loop()
     try:
-        loop.run_until_complete(main())
+        app.run(main())
     except KeyboardInterrupt:
-        pass
-    finally:
-        loop.close()
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Error: {e}")
