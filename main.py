@@ -79,20 +79,20 @@ class TelegramBot:
                 welcome_keyboard = [
                     [
                         InlineKeyboardButton(
-                            text="🔵 Official Channel", 
+                            text="⚡ Official Channel", 
                             url="https://t.me/+0iMDc7jCLThkNmRl"
                         )
                     ],
                     [
                         InlineKeyboardButton(
-                            text="🟢 Official Website", 
+                            text="🟢 WhatsApp Channel", 
                             url="https://sk4film.vercel.app/"
                         )
                     ],
                     [
                         InlineKeyboardButton(
-                            text="🔴 Android App", 
-                            url="https://t.me/How_to_Download_Sk/102"
+                            text="🌐 Mᴏᴠɪᴇꜱ Website", 
+                            url="https://sk4film.vercel.app/"
                         )
                     ]
                 ]
@@ -105,15 +105,10 @@ class TelegramBot:
                     f"✅ **Join Approved!**\n\n"
                     "🎬 *Your Ultimate Entertainment Partner*\n"
                     "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    "🌟 *Connect with us:*\n"
-                    "• 📢 Get latest updates\n"
-                    "• 🎯 Access exclusive content\n"
-                    "• 📱 Download our Android App\n"
-                    "• 💬 Join our community\n\n"
-                    "👇 *Click the buttons below to explore!* 👇\n\n"
-                    "⚠️ *Group Rules:*\n"
-                    "• No links or @mentions allowed\n"
-                    "• Your messages will auto-delete after 5 minutes\n"
+                    "💬 *<a href='https://t.me/How_to_Download_Sk/102'>Connect with Admin:</a>*\n"
+                    "• 📢 Get latest Movies\n"
+                    "• 🌐 Access exclusive content\n"
+                    "• 📱 <a href='https://t.me/How_to_Download_Sk/102'>Download our Android App</a>\n"
                     "• Respect all members\n\n"
                     "_Enjoy your stay! 🎉_"
                 )
@@ -179,19 +174,19 @@ class TelegramBot:
             keyboard = [
                 [
                     InlineKeyboardButton(
-                        text="🔵 📢 Official Channel", 
+                        text="📢 Official Channel", 
                         url="https://t.me/+0iMDc7jCLThkNmRl"
                     )
                 ],
                 [
                     InlineKeyboardButton(
-                        text="🟢 🌐 Official Website", 
+                        text="🌐 Movies Website", 
                         url="https://sk4film.vercel.app/"
                     )
                 ],
                 [
                     InlineKeyboardButton(
-                        text="🔴 📱 Android App", 
+                        text="📱 Android App", 
                         url="https://t.me/How_to_Download_Sk/102"
                     )
                 ]
@@ -201,19 +196,15 @@ class TelegramBot:
             
             # Caption text with formatting
             caption = (
-                "✨ *Welcome to SK4Film Bot!* ✨\n\n"
+                "✨ *Welcome to SK4Film* ✨\n\n"
                 "🎬 *Your Ultimate Entertainment Partner*\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 "🌟 *What we offer:*\n"
                 "• 📢 Latest movie updates\n"
                 "• 🎯 Exclusive content\n"
-                "• 📱 Android App access\n"
-                "• 💬 24/7 support\n\n"
+                "• 📱 Android App access\n\n"
                 "🌟 *Connect with us:*\n"
-                "• Click buttons below to join\n"
-                "• Get instant updates\n"
-                "• Never miss any content\n\n"
-                "👇 *Click the buttons below to explore!* 👇\n\n"
+                "• 💬 @Skadminrobot\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
                 "_Thank you for choosing SK4Film!_ 🎉"
             )
@@ -247,7 +238,7 @@ class TelegramBot:
             # Super fallback
             try:
                 await update.message.reply_text(
-                    "🤖 *SK4Film Bot*\n\n"
+                    "🤖 *SK4Film*\n\n"
                     "• Official Channel: https://t.me/+0iMDc7jCLThkNmRl\n"
                     "• Official Website: https://sk4film.vercel.app/\n"
                     "• Android App: https://t.me/How_to_Download_Sk/102",
