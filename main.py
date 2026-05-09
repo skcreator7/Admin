@@ -86,12 +86,12 @@ class TelegramBot:
                     [
                         InlineKeyboardButton(
                             text="🟢 WhatsApp Channel", 
-                            url="https://sk4film.vercel.app/"
+                            url="https://whatsapp.com/channel/0029Vb7IRSF89inj7Za3cQ0Y"
                         )
                     ],
                     [
                         InlineKeyboardButton(
-                            text="🌐 Mᴏᴠɪᴇꜱ Website", 
+                            text="🌐 Movies Website", 
                             url="https://sk4film.vercel.app/"
                         )
                     ]
@@ -99,18 +99,18 @@ class TelegramBot:
                 
                 reply_markup = InlineKeyboardMarkup(welcome_keyboard)
                 
-                # PRIVATE welcome message (sent to user's DM)
+                # Using HTML instead of Markdown to avoid parsing issues
                 private_caption = (
-                    f"✨ *Welcome {user.first_name}!* ✨\n\n"
-                    f"✅ **Join Approved!**\n\n"
-                    "🎬 *Your Ultimate Entertainment Partner*\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    "💬 *<a href='https://t.me/How_to_Download_Sk/102'>Connect with Admin:</a>*\n"
-                    "• 📢 Get latest Movies\n"
-                    "• 🌐 Access exclusive content\n"
-                    "• 📱 <a href='https://t.me/How_to_Download_Sk/102'>Download our Android App</a>\n"
-                    "• Respect all members\n\n"
-                    "_Enjoy your stay! 🎉_"
+                    f"✨ <b>Welcome {user.first_name}!</b> ✨\n\n"
+                    f"✅ <b>Join Approved!</b>\n\n"
+                    f"🎬 <b>Your Ultimate Entertainment Partner</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"💬 <a href='https://t.me/skadminrobot'>Connect with Admin</a>\n"
+                    f"• 📢 Get latest Movies\n"
+                    f"• 🌐 Access exclusive content\n"
+                    f"• 📱 <a href='https://t.me/How_to_Download_Sk/102'>Download our Android App</a>\n"
+                    f"• Respect all members\n\n"
+                    f"<i>Enjoy your stay! 🎉</i>"
                 )
                 
                 # Send PRIVATE message (using send_message to user, not to group)
@@ -118,7 +118,7 @@ class TelegramBot:
                     chat_id=user.id,  # ← Private chat with user
                     photo=self.IMAGE_URL,
                     caption=private_caption,
-                    parse_mode='Markdown',
+                    parse_mode='HTML',
                     reply_markup=reply_markup
                 )
                 
@@ -130,11 +130,8 @@ class TelegramBot:
                 try:
                     fallback_msg = await context.bot.send_message(
                         chat_id=user.id,  # ← Private message
-                        text=f"✨ *Welcome {user.first_name}!* ✨\n\n✅ Join Approved!\n\n"
-                             f"Official Channel: https://t.me/+0iMDc7jCLThkNmRl\n"
-                             f"Website: https://sk4film.vercel.app/\n"
-                             f"Android App: https://t.me/How_to_Download_Sk/102",
-                        parse_mode='Markdown'
+                        text=f"✨ Welcome {user.first_name}! ✨\n\n✅ Join Approved!\n\nOfficial Channel: https://t.me/+0iMDc7jCLThkNmRl\nWebsite: https://sk4film.vercel.app/\nAndroid App: https://t.me/How_to_Download_Sk/102",
+                        parse_mode=None
                     )
                 except Exception as e2:
                     logger.error(f"Error sending fallback private message: {e2}")
@@ -142,13 +139,13 @@ class TelegramBot:
             # Send notification to ADMIN (not in group, private message to admin)
             if self.admin_ids:
                 admin_notification = (
-                    f"🆕 *New Member Joined!*\n\n"
-                    f"👤 *User:* {user.full_name}\n"
-                    f"🆔 *ID:* `{user.id}`\n"
-                    f"✅ *Status:* Join Approved\n"
-                    f"📅 *Time:* {join_request.date.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                    f"👥 *Group:* {join_request.chat.title}\n"
-                    f"🔗 *Username:* @{user.username if user.username else 'N/A'}"
+                    f"🆕 <b>New Member Joined!</b>\n\n"
+                    f"👤 <b>User:</b> {user.full_name}\n"
+                    f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
+                    f"✅ <b>Status:</b> Join Approved\n"
+                    f"📅 <b>Time:</b> {join_request.date.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"👥 <b>Group:</b> {join_request.chat.title}\n"
+                    f"🔗 <b>Username:</b> @{user.username if user.username else 'N/A'}"
                 )
                 
                 for admin_id in self.admin_ids:
@@ -156,7 +153,7 @@ class TelegramBot:
                         await context.bot.send_message(
                             chat_id=admin_id,  # ← Private message to admin
                             text=admin_notification,
-                            parse_mode='Markdown'
+                            parse_mode='HTML'
                         )
                         logger.info(f"Sent admin notification to {admin_id}")
                     except Exception as e:
@@ -194,19 +191,19 @@ class TelegramBot:
             
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # Caption text with formatting
+            # Caption text with HTML formatting
             caption = (
-                "✨ *Welcome to SK4Film* ✨\n\n"
-                "🎬 *Your Ultimate Entertainment Partner*\n"
+                "✨ <b>Welcome to SK4Film</b> ✨\n\n"
+                "🎬 <b>Your Ultimate Entertainment Partner</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                "🌟 *What we offer:*\n"
+                "🌟 <b>What we offer:</b>\n"
                 "• 📢 Latest movie updates\n"
                 "• 🎯 Exclusive content\n"
                 "• 📱 Android App access\n\n"
-                "🌟 *Connect with us:*\n"
+                "🌟 <b>Connect with us:</b>\n"
                 "• 💬 @Skadminrobot\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
-                "_Thank you for choosing SK4Film!_ 🎉"
+                "<i>Thank you for choosing SK4Film!</i> 🎉"
             )
             
             # Send photo with caption and buttons
@@ -214,7 +211,7 @@ class TelegramBot:
                 await update.message.reply_photo(
                     photo=self.IMAGE_URL,
                     caption=caption,
-                    parse_mode='Markdown',
+                    parse_mode='HTML',
                     reply_markup=reply_markup
                 )
             except Exception as e:
@@ -222,7 +219,7 @@ class TelegramBot:
                 # Fallback: send text message only
                 await update.message.reply_text(
                     caption,
-                    parse_mode='Markdown',
+                    parse_mode='HTML',
                     reply_markup=reply_markup,
                     disable_web_page_preview=True
                 )
@@ -238,11 +235,11 @@ class TelegramBot:
             # Super fallback
             try:
                 await update.message.reply_text(
-                    "🤖 *SK4Film*\n\n"
+                    "🤖 SK4Film\n\n"
                     "• Official Channel: https://t.me/+0iMDc7jCLThkNmRl\n"
                     "• Official Website: https://sk4film.vercel.app/\n"
                     "• Android App: https://t.me/How_to_Download_Sk/102",
-                    parse_mode='Markdown'
+                    parse_mode=None
                 )
             except:
                 pass
@@ -255,14 +252,14 @@ class TelegramBot:
         # Send info messages based on button clicked
         if query.data == "channel":
             msg = await query.message.reply_text(
-                "📢 **Official Telegram Channel**\n\n"
+                "📢 <b>Official Telegram Channel</b>\n\n"
                 "Join our channel for:\n"
                 "• Daily updates\n"
                 "• Latest news\n"
                 "• Exclusive content\n"
                 "• Community posts\n\n"
-                "[Click here to join](https://t.me/+0iMDc7jCLThkNmRl)",
-                parse_mode='Markdown',
+                "<a href='https://t.me/+0iMDc7jCLThkNmRl'>Click here to join</a>",
+                parse_mode='HTML',
                 disable_web_page_preview=True
             )
             # Auto-delete info message after 30 seconds
@@ -275,14 +272,14 @@ class TelegramBot:
             )
         elif query.data == "website":
             msg = await query.message.reply_text(
-                "🌐 **Official Website**\n\n"
+                "🌐 <b>Official Website</b>\n\n"
                 "Visit our website for:\n"
                 "• Movies & Shows\n"
                 "• Latest updates\n"
                 "• Download links\n"
                 "• Support & Help\n\n"
-                "[SK4Film Website](https://sk4film.vercel.app/)",
-                parse_mode='Markdown',
+                "<a href='https://sk4film.vercel.app/'>SK4Film Website</a>",
+                parse_mode='HTML',
                 disable_web_page_preview=True
             )
             context.job_queue.run_once(
@@ -294,14 +291,14 @@ class TelegramBot:
             )
         elif query.data == "app":
             msg = await query.message.reply_text(
-                "📱 **Official Android App**\n\n"
+                "📱 <b>Official Android App</b>\n\n"
                 "Download our app for:\n"
                 "• Better experience\n"
                 "• Faster streaming\n"
                 "• Offline downloads\n"
                 "• Exclusive features\n\n"
-                "[Download Now](https://t.me/How_to_Download_Sk/102)",
-                parse_mode='Markdown',
+                "<a href='https://t.me/How_to_Download_Sk/102'>Download Now</a>",
+                parse_mode='HTML',
                 disable_web_page_preview=True
             )
             context.job_queue.run_once(
@@ -367,8 +364,8 @@ class TelegramBot:
                     # Send warning message
                     warning = await context.bot.send_message(
                         chat_id=message.chat.id,
-                        text="⚠️ **Warning!**\n\nLinks, @mentions, and promotional content are not allowed for non-admin members!\n\n_This message will auto-delete in 10 seconds._",
-                        parse_mode='Markdown',
+                        text="⚠️ <b>Warning!</b>\n\nLinks, @mentions, and promotional content are not allowed for non-admin members!\n\n<i>This message will auto-delete in 10 seconds.</i>",
+                        parse_mode='HTML',
                         reply_to_message_id=message.message_id
                     )
                     # Schedule warning deletion after 10 seconds
@@ -419,14 +416,14 @@ class TelegramBot:
                         reply_markup = InlineKeyboardMarkup(welcome_keyboard)
                         
                         private_caption = (
-                            f"✨ *Welcome {user.first_name}!* ✨\n\n"
-                            f"✅ **Join Approved!**\n\n"
-                            "🎬 **Welcome to SK4Film Community!**\n\n"
-                            "⚠️ *Important Rules:*\n"
-                            "• ❌ No links or @mentions\n"
-                            "• ⏰ Messages auto-delete after 5 minutes\n"
-                            "• 👑 Admins are exempt from rules\n\n"
-                            "👇 *Connect with us:*"
+                            f"✨ <b>Welcome {user.first_name}!</b> ✨\n\n"
+                            f"✅ <b>Join Approved!</b>\n\n"
+                            f"🎬 <b>Welcome to SK4Film Community!</b>\n\n"
+                            f"⚠️ <b>Important Rules:</b>\n"
+                            f"• ❌ No links or @mentions\n"
+                            f"• ⏰ Messages auto-delete after 5 minutes\n"
+                            f"• 👑 Admins are exempt from rules\n\n"
+                            f"👇 <b>Connect with us:</b>"
                         )
                         
                         # Send PRIVATE message to user
@@ -434,19 +431,19 @@ class TelegramBot:
                             chat_id=user.id,  # ← Private message
                             photo=self.IMAGE_URL,
                             caption=private_caption,
-                            parse_mode='Markdown',
+                            parse_mode='HTML',
                             reply_markup=reply_markup
                         )
                         
                         # Send notification to ADMIN
                         if self.admin_ids:
                             admin_notification = (
-                                f"🆕 *New Member Joined via Invite Link!*\n\n"
-                                f"👤 *User:* {user.full_name}\n"
-                                f"🆔 *ID:* `{user.id}`\n"
-                                f"✅ *Status:* Join Approved\n"
-                                f"👥 *Group:* {chat_member_update.chat.title}\n"
-                                f"🔗 *Username:* @{user.username if user.username else 'N/A'}"
+                                f"🆕 <b>New Member Joined via Invite Link!</b>\n\n"
+                                f"👤 <b>User:</b> {user.full_name}\n"
+                                f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
+                                f"✅ <b>Status:</b> Join Approved\n"
+                                f"👥 <b>Group:</b> {chat_member_update.chat.title}\n"
+                                f"🔗 <b>Username:</b> @{user.username if user.username else 'N/A'}"
                             )
                             
                             for admin_id in self.admin_ids:
@@ -454,7 +451,7 @@ class TelegramBot:
                                     await context.bot.send_message(
                                         chat_id=admin_id,
                                         text=admin_notification,
-                                        parse_mode='Markdown'
+                                        parse_mode='HTML'
                                     )
                                 except Exception as e:
                                     logger.error(f"Error sending admin notification: {e}")
@@ -492,6 +489,10 @@ class TelegramBot:
                 .concurrent_updates(True)
                 .build()
             )
+            
+            # Clear any existing webhook to avoid conflicts
+            await self.application.bot.delete_webhook(drop_pending_updates=True)
+            logger.info("Webhook cleared successfully")
 
             # Add all handlers
             self.application.add_handler(CommandHandler("start", self.start))
