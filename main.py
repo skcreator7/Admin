@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_USER_ID = os.getenv("ADMIN_USER_ID")  # Add admin ID in .env file
 
 if not BOT_TOKEN:
     logger.error("No BOT_TOKEN found in environment variables!")
@@ -37,11 +38,19 @@ class TelegramBot:
         self.runner = None
         self.site = None
         self.stop_event = asyncio.Event()
-        self.AUTO_DELETE_TIME = 300  # 5 minutes in seconds (changed from 120 to 300)
+        self.AUTO_DELETE_TIME = 300  # 5 minutes in seconds
         self.DELETE_LINK_MESSAGE = True
         
         # Image URL for welcome/start message
         self.IMAGE_URL = "https://i.ibb.co/VYB5J028/x.jpg"
+        
+        # Admin IDs (can be multiple, comma-separated)
+        self.admin_ids = []
+        if ADMIN_USER_ID:
+            try:
+                self.admin_ids = [int(id.strip()) for id in ADMIN_USER_ID.split(',')]
+            except:
+                logger.error("Invalid ADMIN_USER_ID format")
 
     async def delete_message(self, context: ContextTypes.DEFAULT_TYPE):
         """Delete a message after delay"""
@@ -55,7 +64,7 @@ class TelegramBot:
             logger.error(f"Error deleting message: {e}")
 
     async def auto_approve_join_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Automatically approve chat join requests and send welcome message with image"""
+        """Automatically approve chat join requests and send private welcome message"""
         try:
             join_request: ChatJoinRequest = update.chat_join_request
             user = join_request.from_user
@@ -64,9 +73,9 @@ class TelegramBot:
             await join_request.approve()
             logger.info(f"Auto-approved join request for user {user.id} ({user.full_name}) in chat {join_request.chat.id}")
             
-            # Send welcome message with image and colorful buttons
+            # Send PRIVATE welcome message to the new user (not in group)
             try:
-                # Create welcome keyboard
+                # Create welcome keyboard for private message
                 welcome_keyboard = [
                     [
                         InlineKeyboardButton(
@@ -90,9 +99,10 @@ class TelegramBot:
                 
                 reply_markup = InlineKeyboardMarkup(welcome_keyboard)
                 
-                # Welcome message caption
-                caption = (
+                # PRIVATE welcome message (sent to user's DM)
+                private_caption = (
                     f"✨ *Welcome {user.first_name}!* ✨\n\n"
+                    f"✅ **Join Approved!**\n\n"
                     "🎬 *Your Ultimate Entertainment Partner*\n"
                     "━━━━━━━━━━━━━━━━━━━━━━\n\n"
                     "🌟 *Connect with us:*\n"
@@ -108,36 +118,56 @@ class TelegramBot:
                     "_Enjoy your stay! 🎉_"
                 )
                 
-                # Send photo with caption and buttons
+                # Send PRIVATE message (using send_message to user, not to group)
                 await context.bot.send_photo(
-                    chat_id=join_request.chat.id,
+                    chat_id=user.id,  # ← Private chat with user
                     photo=self.IMAGE_URL,
-                    caption=caption,
+                    caption=private_caption,
                     parse_mode='Markdown',
                     reply_markup=reply_markup
                 )
                 
+                logger.info(f"Sent private welcome message to user {user.id}")
+                
             except Exception as e:
-                logger.error(f"Error sending welcome message with image: {e}")
-                # Fallback: send text message if image fails
+                logger.error(f"Error sending private welcome message: {e}")
+                # Fallback: send text message if photo fails
                 try:
                     fallback_msg = await context.bot.send_message(
-                        chat_id=join_request.chat.id,
-                        text=f"🎉 Welcome {user.mention_html()} to the group!\n\n"
+                        chat_id=user.id,  # ← Private message
+                        text=f"✨ *Welcome {user.first_name}!* ✨\n\n✅ Join Approved!\n\n"
                              f"Official Channel: https://t.me/+0iMDc7jCLThkNmRl\n"
                              f"Website: https://sk4film.vercel.app/\n"
                              f"Android App: https://t.me/How_to_Download_Sk/102",
-                        parse_mode='HTML'
-                    )
-                    context.job_queue.run_once(
-                        self.delete_message,
-                        60,
-                        chat_id=fallback_msg.chat_id,
-                        data=fallback_msg.message_id,
-                        name=f"del_welcome_{fallback_msg.message_id}"
+                        parse_mode='Markdown'
                     )
                 except Exception as e2:
-                    logger.error(f"Error sending fallback message: {e2}")
+                    logger.error(f"Error sending fallback private message: {e2}")
+            
+            # Send notification to ADMIN (not in group, private message to admin)
+            if self.admin_ids:
+                admin_notification = (
+                    f"🆕 *New Member Joined!*\n\n"
+                    f"👤 *User:* {user.full_name}\n"
+                    f"🆔 *ID:* `{user.id}`\n"
+                    f"✅ *Status:* Join Approved\n"
+                    f"📅 *Time:* {join_request.date.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"👥 *Group:* {join_request.chat.title}\n"
+                    f"🔗 *Username:* @{user.username if user.username else 'N/A'}"
+                )
+                
+                for admin_id in self.admin_ids:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=admin_id,  # ← Private message to admin
+                            text=admin_notification,
+                            parse_mode='Markdown'
+                        )
+                        logger.info(f"Sent admin notification to {admin_id}")
+                    except Exception as e:
+                        logger.error(f"Error sending admin notification to {admin_id}: {e}")
+            else:
+                logger.warning("No ADMIN_USER_ID set in environment variables")
                 
         except Exception as e:
             logger.error(f"Error auto-approving join request: {e}")
@@ -388,7 +418,7 @@ class TelegramBot:
                 if not await self.is_admin(context, chat_member_update.chat.id, user.id):
                     logger.info(f"User {user.id} ({user.full_name}) joined the chat via invite link")
                     
-                    # Send welcome message with image for invite link joins
+                    # Send PRIVATE welcome message (not in group)
                     try:
                         welcome_keyboard = [
                             [InlineKeyboardButton("🔵 Join Channel", url="https://t.me/+0iMDc7jCLThkNmRl")],
@@ -397,8 +427,9 @@ class TelegramBot:
                         ]
                         reply_markup = InlineKeyboardMarkup(welcome_keyboard)
                         
-                        caption = (
+                        private_caption = (
                             f"✨ *Welcome {user.first_name}!* ✨\n\n"
+                            f"✅ **Join Approved!**\n\n"
                             "🎬 **Welcome to SK4Film Community!**\n\n"
                             "⚠️ *Important Rules:*\n"
                             "• ❌ No links or @mentions\n"
@@ -407,34 +438,38 @@ class TelegramBot:
                             "👇 *Connect with us:*"
                         )
                         
+                        # Send PRIVATE message to user
                         await context.bot.send_photo(
-                            chat_id=chat_member_update.chat.id,
+                            chat_id=user.id,  # ← Private message
                             photo=self.IMAGE_URL,
-                            caption=caption,
+                            caption=private_caption,
                             parse_mode='Markdown',
                             reply_markup=reply_markup
                         )
+                        
+                        # Send notification to ADMIN
+                        if self.admin_ids:
+                            admin_notification = (
+                                f"🆕 *New Member Joined via Invite Link!*\n\n"
+                                f"👤 *User:* {user.full_name}\n"
+                                f"🆔 *ID:* `{user.id}`\n"
+                                f"✅ *Status:* Join Approved\n"
+                                f"👥 *Group:* {chat_member_update.chat.title}\n"
+                                f"🔗 *Username:* @{user.username if user.username else 'N/A'}"
+                            )
+                            
+                            for admin_id in self.admin_ids:
+                                try:
+                                    await context.bot.send_message(
+                                        chat_id=admin_id,
+                                        text=admin_notification,
+                                        parse_mode='Markdown'
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Error sending admin notification: {e}")
+                        
                     except Exception as e:
-                        logger.error(f"Error sending welcome image: {e}")
-                        # Fallback text message
-                        warning_msg = await context.bot.send_message(
-                            chat_id=chat_member_update.chat.id,
-                            text=f"👋 Welcome {user.first_name}!\n\n"
-                                 f"⚠️ **Group Rules:**\n"
-                                 f"• Messages with links or @mentions will be automatically deleted\n"
-                                 f"• All non-admin messages will be deleted after 5 minutes\n\n"
-                                 f"📢 Channel: https://t.me/+0iMDc7jCLThkNmRl\n"
-                                 f"🌐 Website: https://sk4film.vercel.app/\n"
-                                 f"📱 App: https://t.me/How_to_Download_Sk/102",
-                            parse_mode='Markdown'
-                        )
-                        context.job_queue.run_once(
-                            self.delete_message,
-                            120,
-                            chat_id=warning_msg.chat_id,
-                            data=warning_msg.message_id,
-                            name=f"del_welcome_warning_{warning_msg.message_id}"
-                        )
+                        logger.error(f"Error sending private welcome: {e}")
                         
         except Exception as e:
             logger.error(f"Error tracking chat members: {e}")
@@ -480,7 +515,11 @@ class TelegramBot:
             await self.application.initialize()
             await self.application.start()
             logger.info("Bot initialized successfully")
-            logger.info(f"Features enabled: Auto-approve joins, Delete non-admin links, Auto-delete after {self.AUTO_DELETE_TIME}s")
+            logger.info(f"Features enabled: Auto-approve joins, Private welcome messages, Admin notifications")
+            if self.admin_ids:
+                logger.info(f"Admin notifications will be sent to: {self.admin_ids}")
+            else:
+                logger.warning("No admin IDs configured. Set ADMIN_USER_ID in .env file")
         except Exception as e:
             logger.error(f"Failed to initialize bot: {e}")
             raise
