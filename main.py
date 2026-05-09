@@ -4,7 +4,6 @@ import re
 import os
 from telethon import TelegramClient, events, types
 import logging
-from aiohttp import web
 
 # Configure logging
 logging.basicConfig(
@@ -37,7 +36,6 @@ CHANNEL_LINK = "https://t.me/+0iMDc7jCLThkNmRl"
 WEBSITE_LINK = "https://sk4film.vercel.app/"
 APP_LINK = "https://t.me/How_to_Download_Sk/102"
 AUTO_DELETE_TIME = 300
-PORT = int(os.getenv('PORT', '8000'))
 
 # Initialize client
 client = TelegramClient('sk4film_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
@@ -51,27 +49,12 @@ async def delete_message_after_delay(chat_id, message_id, delay):
     except Exception as e:
         logger.error(f"Error deleting message: {e}")
 
-# Web server for health checks
-async def health_check(request):
-    return web.Response(text="SK4FILM Bot is running!")
-
-async def start_web_server():
-    app = web.Application()
-    app.router.add_get('/', health_check)
-    app.router.add_get('/health', health_check)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', PORT)
-    await site.start()
-    logger.info(f"Health check server running on port {PORT}")
-
 @client.on(events.NewMessage(pattern='/start'))
 async def start(event):
     """Handle /start command"""
     try:
         await event.delete()
         
-        # Create buttons
         keyboard = [
             [types.KeyboardButtonUrl(text="🟢 OFFICIAL CHANNEL", url=CHANNEL_LINK)],
             [types.KeyboardButtonUrl(text="🔵 OFFICIAL WEBSITE", url=WEBSITE_LINK)],
@@ -239,9 +222,6 @@ async def process_message(event):
         logger.error(f"Error processing: {e}")
 
 async def main():
-    # Start web server for health checks
-    await start_web_server()
-    
     logger.info("🎨 SK4FILM Bot Started! 🚀")
     logger.info("✅ Auto-welcome new members - ACTIVE")
     logger.info("✅ Admin message protection - ACTIVE")
@@ -260,4 +240,11 @@ async def main():
     await client.run_until_disconnected()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Simple run without web server
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        loop.close()
