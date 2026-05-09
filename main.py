@@ -181,7 +181,8 @@ async def auto_approve_join_request(client, join_request):
                 parse_mode="markdown",
                 reply_markup=keyboard
             )
-        except:
+        except Exception as e:
+            logger.error(f"Error sending photo: {e}")
             await client.send_message(
                 chat_id=join_request.chat.id,
                 text=caption,
@@ -227,7 +228,8 @@ async def welcome_new_members(client, message):
                     parse_mode="markdown",
                     reply_markup=keyboard
                 )
-            except:
+            except Exception as e:
+                logger.error(f"Error sending photo: {e}")
                 await client.send_message(
                     chat_id=message.chat.id,
                     text=caption,
@@ -251,7 +253,9 @@ async def process_message(client, message):
         except:
             is_admin = False
         
+        # Admin messages - NEVER delete
         if is_admin:
+            logger.debug(f"Admin {message.from_user.id} message - not deleting")
             return
         
         text = message.text or message.caption or ""
@@ -274,9 +278,11 @@ async def process_message(client, message):
             except Exception as e:
                 logger.error(f"Error deleting message: {e}")
         
+        # Schedule regular message deletion
         asyncio.create_task(
             delete_message_after_delay(message.chat.id, message.id, AUTO_DELETE_TIME)
         )
+        logger.debug(f"Scheduled deletion for message {message.id}")
         
     except FloodWait as e:
         await asyncio.sleep(e.value)
@@ -287,13 +293,13 @@ async def process_message(client, message):
 async def handle_buttons(client, callback_query: CallbackQuery):
     """Handle button clicks"""
     messages = {
-        "official_btn": f"🔵 **OFFICIAL CHANNEL**\n\n🔗 {OFFICIAL_LINK}",
-        "movies_btn": f"🟢 **MOVIES WEBSITE**\n\n🔗 {MOVIES_LINK}",
-        "android_btn": f"🔴 **ANDROID APP**\n\n🔗 {ANDROID_LINK}"
+        "official_btn": f"🔵 **OFFICIAL CHANNEL**\n\nJoin our official channel for latest updates!\n\n🔗 {OFFICIAL_LINK}",
+        "movies_btn": f"🟢 **MOVIES WEBSITE**\n\nVisit our website for exclusive content!\n\n🔗 {MOVIES_LINK}",
+        "android_btn": f"🔴 **ANDROID APP**\n\nDownload our app for best experience!\n\n🔗 {ANDROID_LINK}"
     }
     
     try:
-        await callback_query.answer("Opening...", show_alert=False)
+        await callback_query.answer("Opening... 🔗", show_alert=False)
         
         msg = await callback_query.message.reply_text(
             messages.get(callback_query.data, "Button clicked!"),
@@ -308,6 +314,7 @@ async def handle_buttons(client, callback_query: CallbackQuery):
     except Exception as e:
         logger.error(f"Error in callback: {e}")
 
+# Main function - FIXED
 async def main():
     """Main function"""
     print("\n" + "="*60)
@@ -326,12 +333,16 @@ async def main():
     logger.info("✅ Delete links/mentions - ACTIVE")
     logger.info("✅ Auto-delete after 5 minutes - ACTIVE")
     
-    await client.idle()
+    # Keep bot running
+    await asyncio.Event().wait()
 
+# Run the bot - FIXED
 if __name__ == "__main__":
     try:
-        app.run(main())
+        print("Starting bot...")
+        app.run()
     except KeyboardInterrupt:
-        logger.info("Bot stopped")
+        logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Error: {e}")
+        print(f"Error occurred: {e}")
