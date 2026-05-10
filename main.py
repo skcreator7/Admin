@@ -101,15 +101,15 @@ class TelegramBot:
                 
                 # Using HTML instead of Markdown to avoid parsing issues
                 private_caption = (
-                    f"✨ <b>Hey {user.first_name} Join Req. Approved</b> ✅\n"
+                    f"✨ <b>Hᴇʏ {user.first_name} Jᴏɪɴ RᴇQ. AᴘᴘʀᴏᴠᴇD</b> ✅\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"🔎 <b>MOVIES SEARCH GROUP</b>\n"
-                    f"❂»» <a href='https://t.me/+aH09R6aMoM81MWQ1'>Cʟɪᴄᴋ Hᴇʀᴇ ««❂</a>\n\n"
-                    f"🪩 <b>Movies Website</b>\n"
-                    f"❂»» <a href='https://sk4film.vercel.app/'>Cʟɪᴄᴋ Hᴇʀᴇ ««❂</a>\n\n"
-                    f"🔞 <b>Viral Pörn Videos</b>\n"
-                    f"❂»» <a href='https://t.me/xxx_Video_Here'>Cʟɪᴄᴋ Hᴇʀᴇ ««❂</a>\n\n"
-                    f"• 😍 <i>Respect all members</i>\n"
+                    f"<b>🔎 Mᴏᴠɪᴇꜱ Sᴇᴀʀᴄʜ Gʀᴏᴜᴘ</b>\n"
+                    f"<b>❂»» <a href='https://t.me/+aH09R6aMoM81MWQ1'>Cʟɪᴄᴋ Hᴇʀᴇ ««❂</a></b>\n\n"
+                    f"<b>🪩 Mᴏᴠɪᴇꜱ Wᴇʙꜱɪᴛᴇ</b>\n"
+                    f"<b>❂»» <a href='https://sk4film.vercel.app/'>Cʟɪᴄᴋ Hᴇʀᴇ ««❂</a></b>\n\n"
+                    f"<b>🔞 Vɪʀᴀʟ Pöʀɴ Vɪᴅᴇᴏꜱ</b>\n"
+                    f"<b>❂»» <a href='https://t.me/xxx_Video_Here'>Cʟɪᴄᴋ Hᴇʀᴇ ««❂</a></b>\n\n"
+                    f"<i><b>• 😍 <a href='https://t.me/skadminrobot'>Aᴅᴍɪɴ</a> - Rᴇꜱᴘᴇᴄᴛ ᴀʟʟ Mᴇᴍʙᴇʀꜱ</b></i>"
                 )
                 
                 # Send PRIVATE message (using send_message to user, not to group)
