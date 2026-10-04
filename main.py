@@ -2,7 +2,11 @@ import logging
 import os
 import asyncio
 import re
+import html
+from urllib.parse import urlparse
+import aiohttp
 from aiohttp import web
+from shortzy import Shortzy
 from telegram import Update, ChatMemberUpdated, ChatJoinRequest, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -31,6 +35,157 @@ ADMIN_USER_ID = os.getenv("ADMIN_USER_ID")  # Add admin ID in .env file
 if not BOT_TOKEN:
     logger.error("No BOT_TOKEN found in environment variables!")
     exit(1)
+
+# ---------------- Shortlink config ----------------
+SHORTLINK_URL = os.getenv("SHORTLINK_URL", "sk4link.vercel.app")
+SHORTLINK_API = os.getenv("SHORTLINK_API", "")
+# Comma separated domains jinhe shorten nahi karna (optional)
+SHORTEN_SKIP_DOMAINS = [d.strip().lower() for d in os.getenv("SHORTEN_SKIP_DOMAINS", "").split(",") if d.strip()]
+
+
+async def get_settings(chat_id):
+    """Is bot me per-group shortlink settings nahi hain, isliye empty dict.
+    Isse get_shortlink hamesha SHORTLINK_URL / SHORTLINK_API use karega."""
+    return {}
+
+
+async def get_shortlink(chat_id, link):
+    settings = await get_settings(chat_id) #fetching settings for group
+    if 'shortlink' in settings.keys():
+        URL = settings['shortlink']
+        API = settings['shortlink_api']
+    else:
+        URL = SHORTLINK_URL
+        API = SHORTLINK_API
+    if URL.startswith("shorturllink") or URL.startswith("terabox.in") or URL.startswith("urlshorten.in"):
+        URL = SHORTLINK_URL
+        API = SHORTLINK_API
+    if URL == "sk4update.vercel.app":
+        # method 1:
+        # https = link.split(":")[0] #splitting https or http from link
+        # if "http" == https: #if https == "http":
+        #     https = "https"
+        #     link = link.replace("http", https) #replacing http to https
+        # conn = http.client.HTTPSConnection("api.shareus.io")
+        # payload = json.dumps({
+        #   "api_key": "4c1YTBacB6PTuwogBiEIFvZN5TI3",
+        #   "monetization": True,
+        #   "destination": link,
+        #   "ad_page": 3,
+        #   "category": "Entertainment",
+        #   "tags": ["trendinglinks"],
+        #   "monetize_with_money": False,
+        #   "price": 0,
+        #   "currency": "INR",
+        #   "purchase_note":""
+        
+        # })
+        # headers = {
+        #   'Keep-Alive': '',
+        #   'Content-Type': 'application/json'
+        # }
+        # conn.request("POST", "/generate_link", payload, headers)
+        # res = conn.getresponse()
+        # data = res.read().decode("utf-8")
+        # parsed_data = json.loads(data)
+        # if parsed_data["status"] == "success":
+        #   return parsed_data["link"]
+    #method 2
+        url = f'https://{URL}/api/shorten-simple'
+        params = {
+            "key": API,
+            "link": link,
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params, raise_for_status=True, ssl=False) as response:
+                    data = await response.text()
+                    return data
+        except Exception as e:
+            logger.error(e)
+            return link
+    elif URL == "sk4link.vercel.app":
+        url = f'https://{URL}/api/public/shorten'
+        params = {
+            "api": API,
+            "url": link,
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params, raise_for_status=True, ssl=False) as response:
+                    data = await response.json()
+                    return data.get("shortenedUrl", link)
+        except Exception as e:
+            logger.error(e)
+            return link
+    else:
+        shortzy = Shortzy(api_key=API, base_site=URL)
+        link = await shortzy.convert(link)
+        return link
+
+
+# Matches: <a href="URL"> (text_link entities) OR bare http(s) links
+_LINK_RE = re.compile(r'(<a href="([^"]+)">)|(https?://[^\s<>"]+)', re.IGNORECASE)
+_TRAILING_PUNCT = ".,;:!?)]}'"
+
+
+def _should_skip(link: str) -> bool:
+    """Already short link (SHORTLINK_URL) ya skip-domain ho to dobara short nahi karna."""
+    host = (urlparse(link).hostname or "").lower()
+    domains = [SHORTLINK_URL.lower()] + SHORTEN_SKIP_DOMAINS
+    return any(host == d or host.endswith("." + d) for d in domains if d)
+
+
+async def shorten_links_in_html(chat_id, text_html: str) -> str:
+    """Post ke andar ke saare links ko short karke wahi post wapas return karta hai."""
+    # 1) saare unique links collect karo
+    found = []
+    for m in _LINK_RE.finditer(text_html):
+        if m.group(2):
+            raw = html.unescape(m.group(2))
+        else:
+            raw = html.unescape(m.group(3).rstrip(_TRAILING_PUNCT))
+        if raw.lower().startswith(("http://", "https://")) and not _should_skip(raw) and raw not in found:
+            found.append(raw)
+
+    if not found:
+        return text_html
+
+    # 2) sabko ek saath short karo
+    results = await asyncio.gather(*[get_shortlink(chat_id, l) for l in found])
+    mapping = {}
+    for orig, short in zip(found, results):
+        short = (short or "").strip()
+        mapping[orig] = short if short.startswith("http") else orig
+
+    # 3) post me replace karo
+    def repl(m):
+        if m.group(2):
+            raw = html.unescape(m.group(2))
+            new = mapping.get(raw, raw)
+            return f'<a href="{html.escape(new, quote=True)}">'
+        token = m.group(3)
+        stripped = token.rstrip(_TRAILING_PUNCT)
+        tail = token[len(stripped):]
+        raw = html.unescape(stripped)
+        new = mapping.get(raw, raw)
+        return html.escape(new, quote=False) + tail
+
+    return _LINK_RE.sub(repl, text_html)
+
+
+def split_text(text: str, limit: int = 4000):
+    """Telegram 4096 char limit ke liye lines ke hisaab se split."""
+    parts, cur = [], ""
+    for line in text.split("\n"):
+        if len(cur) + len(line) + 1 > limit and cur:
+            parts.append(cur)
+            cur = ""
+        cur += line + "\n"
+    if cur.strip():
+        parts.append(cur.rstrip("\n"))
+    return parts
+
 
 class TelegramBot:
     def __init__(self):
@@ -343,6 +498,10 @@ class TelegramBot:
             if not message or not message.text:
                 return
 
+            # Bot ke PM me owner/admin ke posts ko touch nahi karna (shortlink feature ke liye)
+            if message.chat.type == "private" and message.from_user.id in self.admin_ids:
+                return
+
             # Check if user is admin
             is_user_admin = await self.is_admin(context, message.chat.id, message.from_user.id)
             
@@ -391,6 +550,46 @@ class TelegramBot:
                 
         except Exception as e:
             logger.error(f"Message processing error: {e}", exc_info=True)
+
+    async def shorten_post(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Bot ke PM me post bhejo -> bot same post ko shortened links ke saath reply karega"""
+        try:
+            message = update.message
+            if not message or not message.from_user:
+                return
+
+            # Sirf admin(s) use kar sakte hain (agar ADMIN_USER_ID set hai)
+            if self.admin_ids and message.from_user.id not in self.admin_ids:
+                return
+
+            # Text ya caption (photo/video post) dono support
+            if message.text:
+                post_html = message.text_html
+            elif message.caption:
+                post_html = message.caption_html
+            else:
+                return
+
+            if not re.search(r'https?://', html.unescape(post_html), re.IGNORECASE):
+                await message.reply_text("ℹ️ Is post me koi link nahi mila.")
+                return
+
+            status = await message.reply_text("⏳ Links short ho rahe hain...")
+            new_html = await shorten_links_in_html(message.chat_id, post_html)
+
+            for part in split_text(new_html):
+                await message.reply_text(
+                    part,
+                    parse_mode='HTML',
+                    disable_web_page_preview=True
+                )
+            try:
+                await status.delete()
+            except Exception:
+                pass
+            logger.info(f"Shortened post for user {message.from_user.id}")
+        except Exception as e:
+            logger.error(f"Error shortening post: {e}", exc_info=True)
 
     async def track_chat_members(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Track when new members join via invite links"""
@@ -502,11 +701,20 @@ class TelegramBot:
             # Message handler for non-admin messages
             message_filter = filters.TEXT & ~filters.COMMAND & ~filters.UpdateType.EDITED_MESSAGE
             self.application.add_handler(MessageHandler(message_filter, self.process_message))
+
+            # Shortlink: bot ke PM me post bhejo -> shortened links wali post reply aayegi
+            shorten_filter = (
+                filters.ChatType.PRIVATE
+                & (filters.TEXT | filters.CAPTION)
+                & ~filters.COMMAND
+                & ~filters.UpdateType.EDITED_MESSAGE
+            )
+            self.application.add_handler(MessageHandler(shorten_filter, self.shorten_post), group=1)
             
             await self.application.initialize()
             await self.application.start()
             logger.info("Bot initialized successfully")
-            logger.info(f"Features enabled: Auto-approve joins, Private welcome messages, Admin notifications")
+            logger.info(f"Features enabled: Auto-approve joins, Private welcome messages, Admin notifications, Shortlink posts in PM")
             if self.admin_ids:
                 logger.info(f"Admin notifications will be sent to: {self.admin_ids}")
             else:
